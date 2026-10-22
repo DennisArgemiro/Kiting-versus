@@ -1,0 +1,303 @@
+import { Champion } from "../engine/unit.js";
+import { Projectile } from "../engine/world.js";
+import { Controller, ORDER, unitUnderCursor } from "../engine/orders.js";
+import { skillshotFromSpell } from "../engine/skillshot.js";
+import { clamp, norm } from "../core/math.js";
+import { config } from "../config.js";
+
+// The drill arena: a lane segment, in League of Legends game units. The size
+// is owned by the admin screen; `syncArena()` copies it in before every drill.
+export const ARENA = { x: 0, y: 0, w: 3200, h: 1900 };
+
+const ABILITY_COOLDOWNS = { Q: 4, W: 6, E: 8, R: 12 };
+
+/** Copies the configured map size into the shared ARENA object. */
+export function syncArena() {
+  const arena = config.arena();
+  ARENA.w = arena.w;
+  ARENA.h = arena.h;
+  return ARENA;
+}
+
+/**
+ * Applies the global enemy multipliers to a freshly built enemy.
+ *
+ * The per-level specs decide the shape of the encounter; this is the global
+ * knob the admin screen exposes on top of it (reach, speed, damage, health).
+ */
+export function tuneEnemy(unit) {
+  if (!unit) return unit;
+  const c = config.combat();
+  if (c.enemyRangeScale !== 1) {
+    if (unit.attackRange > 0) unit.attackRange *= c.enemyRangeScale;
+    if (unit.preferredRange > 0) unit.preferredRange *= c.enemyRangeScale;
+  }
+  if (c.enemySpeedScale !== 1) unit.moveSpeed *= c.enemySpeedScale;
+  if (c.enemyDamageScale !== 1) unit.attackDamage *= c.enemyDamageScale;
+  if (c.enemyHpScale !== 1 && unit.maxHp > 0) {
+    const ratio = unit.hp / unit.maxHp;
+    unit.maxHp *= c.enemyHpScale;
+    unit.hp = unit.maxHp * ratio;
+  }
+  return unit;
+}
+
+/** Create the player's champion instance for a drill. */
+export function makePlayer(championData, x, y, hpScale = 1) {
+  const combat = config.combat();
+  const player = new Champion(championData, {
+    team: "player",
+    x,
+    y,
+    hp: championData.stats.health * hpScale * combat.playerHpScale,
+    hitRadius: combat.playerHitRadius,
+    attackPeriod: championData.stats.attackPeriod / combat.playerAttackSpeedScale,
+    attackCast: championData.stats.attackCastTime / combat.playerAttackSpeedScale,
+  });
+  player.isPlayer = true;
+  player.abilityCooldowns = { Q: 0, W: 0, E: 0, R: 0 };
+  player.controller = new Controller(player);
+  return player;
+}
+
+/**
+ * Resolve an attack whose windup just finished.
+ * Melee attacks apply instantly, ranged attacks spawn a projectile.
+ */
+export function resolveAttack(unit, world, target, onLanded) {
+  if (!target || !target.alive) {
+    onLanded?.(null);
+    return;
+  }
+  if (unit.isMelee) {
+    target.takeDamage(unit.attackDamage, world.time);
+    world.effect("text", target.x, target.y - unit.radius, {
+      text: `-${Math.round(unit.attackDamage)}`,
+      color: "#ffd27a",
+      duration: 0.75,
+    });
+    onLanded?.(target);
+    return;
+  }
+  const dx = target.x - unit.x;
+  const dy = target.y - unit.y;
+  const d = norm(dx, dy);
+  world.addProjectile(
+    new Projectile({
+      x: unit.x + d.x * unit.radius,
+      y: unit.y + d.y * unit.radius,
+      dirX: d.x,
+      dirY: d.y,
+      speed: unit.projectileSpeed,
+      damage: unit.attackDamage,
+      owner: unit,
+      team: unit.team,
+      color: unit.team === "player" ? "#ffe08a" : "#ff9a8a",
+      width: 18,
+    }),
+  );
+  onLanded?.(target);
+}
+
+/**
+ * Turns raw mouse input into League style orders.
+ *
+ *   right click on the ground  -> move
+ *   right click on an enemy   -> attack
+ *   A + click                  -> attack-move
+ */
+export function applyInput(player, input, world, onMoveMarker) {
+  const controller = player.controller;
+  const events = { attacked: null, cast: null, ordered: null };
+
+  if (input.hit("KeyS")) {
+    controller.stop();
+    events.ordered = ORDER.STOP;
+  }
+
+  for (const click of input.takeClicks()) {
+    const unit = unitUnderCursor(world, click.x, click.y, 150);
+    const attackMove = input.attackMoveActive;
+    const targetNearest = config.combat().attackMoveTargetNearest;
+    // Kept for the automated driver in tools/probe.mjs.
+    input.lastClick = { button: click.button, x: click.x, y: click.y, onUnit: Boolean(unit) };
+
+    if (click.button === 2) {
+      if (attackMove) {
+        if (targetNearest && unit) {
+          // Right-click on unit with A held -> attack that unit directly
+          controller.attackUnit(unit);
+          events.ordered = ORDER.ATTACK;
+          onMoveMarker?.(unit.x, unit.y, 0xff5f6d);
+        } else {
+          // Right-click on ground with A held -> attack-move
+          controller.attackMoveTo(click.x, click.y);
+          events.ordered = ORDER.ATTACK_MOVE;
+          onMoveMarker?.(click.x, click.y, 0xffb454);
+        }
+      } else if (unit) {
+        controller.attackUnit(unit);
+        events.ordered = ORDER.ATTACK;
+        onMoveMarker?.(unit.x, unit.y, 0xff5f6d);
+      } else {
+        controller.moveTo(click.x, click.y);
+        events.ordered = ORDER.MOVE;
+        onMoveMarker?.(click.x, click.y, 0x4ea1ff);
+      }
+    } else if (click.button === 0) {
+      if (attackMove) {
+        controller.attackMoveTo(click.x, click.y);
+        events.ordered = ORDER.ATTACK_MOVE;
+        onMoveMarker?.(click.x, click.y, 0xffb454);
+      } else if (unit) {
+        controller.attackUnit(unit);
+        events.ordered = ORDER.ATTACK;
+        onMoveMarker?.(unit.x, unit.y, 0xff5f6d);
+      }
+    }
+  }
+
+  return events;
+}
+
+/**
+ * Casts one of the champion's abilities at the given aim point.
+ *
+ * Linear abilities fire a skillshot, circular ones detonate on the ground,
+ * cones sweep, and self-cast abilities heal and empower the next few
+ * seconds of auto attacks.
+ */
+export function castAbility(player, slot, aimX, aimY, world) {
+  const spell = player.spells.get(slot);
+  if (!spell) return null;
+  const cooldown = ABILITY_COOLDOWNS[slot] ?? 6;
+  if ((player.abilityCooldowns[slot] ?? 0) > 0) return null;
+
+  player.abilityCooldowns[slot] = cooldown;
+  player.attackTimer = Math.max(player.attackTimer, 0.25);
+
+  if (spell.shape === "self") {
+    player.hp = Math.min(player.maxHp, player.hp + player.maxHp * 0.2);
+    player.buffTimer = 3.5;
+    player.buffDamage = 1.45;
+    world.effect("ring", player.x, player.y, {
+      color: "#46d39a", radius: 30, grow: 220, duration: 0.6,
+    });
+    return spell;
+  }
+
+  if (spell.shape === "circle") {
+    const shot = skillshotFromSpell(
+      spell, player, aimX, aimY, "player", player.attackDamage * 1.2,
+    );
+    shot.castTime = Math.min(shot.castTime, 0.15);
+    world.addSkillshot(shot);
+    return spell;
+  }
+
+  if (spell.shape === "cone") {
+    const shot = skillshotFromSpell(
+      spell, player, aimX, aimY, "player", player.attackDamage * 1.1,
+    );
+    shot.castTime = Math.min(shot.castTime, 0.15);
+    world.addSkillshot(shot);
+    return spell;
+  }
+
+  const shot = skillshotFromSpell(
+    spell, player, aimX, aimY, "player", player.attackDamage * 1.1,
+  );
+  world.addSkillshot(shot);
+  return spell;
+}
+
+/** Ticks ability cooldowns and the temporary empowerment buff. */
+export function tickAbilities(player, dt) {
+  for (const slot of ["Q", "W", "E", "R"]) {
+    if ((player.abilityCooldowns[slot] ?? 0) > 0) {
+      player.abilityCooldowns[slot] = Math.max(0, player.abilityCooldowns[slot] - dt);
+    }
+  }
+  if (player.buffTimer > 0) {
+    player.buffTimer = Math.max(0, player.buffTimer - dt);
+    if (player.buffTimer === 0) player.buffDamage = 1;
+  }
+}
+
+/**
+ * Generic enemy behaviour.
+ *
+ * behaviours:
+ *   'stationary'  stands still and swings when the player comes close
+ *   'melee'       closes in and attacks
+ *   'ranged'      keeps its distance and attacks
+ *   'caster'      keeps its distance and fires skillshots
+ */
+export function updateEnemy(enemy, world, player, dt, options = {}) {
+  if (!enemy.alive || !player.alive) return;
+
+  const behaviour = enemy.behaviour || "melee";
+  const toPlayer = Math.hypot(player.x - enemy.x, player.y - enemy.y);
+  enemy.faceTowards(player.x, player.y);
+
+  // Keep the distance the behaviour wants.
+  const desired = enemy.preferredRange ?? (
+    behaviour === "ranged" || behaviour === "caster"
+      ? enemy.attackRange * 0.92
+      : enemy.attackRange * 0.85
+  );
+
+  if (behaviour !== "stationary") {
+    if (toPlayer > desired + 40) {
+      enemy.moveToward(player.x, player.y, dt, options.speedScale ?? 1);
+    } else if (toPlayer < desired - 160 && behaviour !== "melee") {
+      enemy.moveDirection(-(player.x - enemy.x), -(player.y - enemy.y), dt, options.speedScale ?? 1);
+    }
+  }
+
+  // Casters are driven by the drill itself (they cast, they do not swing).
+  if (behaviour === "caster") return;
+
+  if (enemy.attackRange > 0 && toPlayer <= enemy.attackRange && enemy.canAttack()) {
+    enemy.startAttack(player);
+  }
+}
+
+/** Points on an ellipse, used to spread enemies around the arena. */
+export function ringPositions(count, cx, cy, rx, ry = rx, offset = 0) {
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const a = offset + (i / count) * Math.PI * 2;
+    out.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry });
+  }
+  return out;
+}
+
+/**
+ * Picks the sparring partner whose attack range is closest to the player's.
+ *
+ * This matters: kiting is a spacing game. Against a partner with a much
+ * shorter reach the fight is trivial, against a much longer one you simply
+ * never get hit. A near-equal range creates the real dilemma - you can
+ * attack, but only by eating a return hit unless you time the step back.
+ */
+export function pickSparringPartner(champions, playerChampion) {
+  const playerRange = playerChampion.stats.attackRange;
+  const playerRanged = playerRange > 300;
+  const pool = champions.filter(
+    (c) => (c.stats.attackRange > 300) === playerRanged && c.alias !== playerChampion.alias,
+  );
+  let best = null;
+  let bestDiff = Infinity;
+  for (const candidate of pool) {
+    const diff = Math.abs(candidate.stats.attackRange - playerRange);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = candidate;
+    }
+  }
+  return best || champions[0];
+}
+
+/** Clamp a 0..1 value into a score contribution. */
+export const unit01 = (v) => clamp(v, 0, 1);

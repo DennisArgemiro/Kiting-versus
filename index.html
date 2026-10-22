@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SkillGap Web — Treino de Kiting e Esquiva</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234ea1ff'/%3E%3Ctext x='16' y='22' font-family='Segoe UI,sans-serif' font-size='15' font-weight='700' text-anchor='middle' fill='%2306121f'%3ESG%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════════════════ MENU ══════════════════════ -->
+  <section id="screen-menu" class="screen is-active">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">SG</span>
+        <div>
+          <h1>SkillGap <em>Web</em></h1>
+          <p class="brand-sub">Treino de kiting e esquiva no navegador</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <label class="field">
+          <span>Campanha</span>
+          <select id="champion-select"></select>
+        </label>
+        <button id="open-stats" class="btn btn-ghost" type="button">Estatísticas</button>
+        <button id="open-admin" class="btn btn-ghost" type="button">Admin</button>
+      </div>
+    </header>
+
+    <div class="menu-body">
+      <div class="menu-main">
+        <div class="section-head">
+          <h2>Treinos</h2>
+          <div class="filters" id="drill-filters">
+            <button class="chip is-on" data-filter="all" type="button">Todos</button>
+            <button class="chip" data-filter="kiting" type="button">Kiting</button>
+            <button class="chip" data-filter="dodge" type="button">Esquiva</button>
+          </div>
+        </div>
+        <div id="drill-list" class="drill-list"></div>
+      </div>
+
+      <aside class="menu-side">
+        <div class="card">
+          <h3>Campanha selecionada</h3>
+          <div id="side-champion" class="side-champion"></div>
+        </div>
+        <div class="card">
+          <h3>Como jogar</h3>
+          <ul class="keys">
+            <li><kbd>Botão dir.</kbd>no chão: andar até o ponto</li>
+            <li><kbd>Botão dir.</kbd>no inimigo: atacar</li>
+            <li><kbd>A</kbd>+ clique: atacar e avançar</li>
+            <li><kbd>S</kbd>parar a ação</li>
+            <li><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd> habilidades</li>
+            <li><kbd>Mouse</kbd> mirar</li>
+            <li><kbd>Esc</kbd> sair do treino</li>
+          </ul>
+          <p class="hint">
+            Movimentação igual ao League: <em>botão direito</em>. Para kitar, clique
+            com o botão direito no inimigo, espere o ataque sair, clique com o
+            botão direito no chão para recuar, e repita.
+          </p>
+          <p class="hint">
+            O anel azul é seu alcance de ataque. O anel vermelho é o alcance
+            inimigo. Você acerta atacando e sobrevive saindo do vermelho —
+            é isso que separa <em>atirar</em> de <em>kitar</em>.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Progresso</h3>
+          <div id="progress-summary" class="progress-summary"></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ DRILL ══════════════════════ -->
+  <section id="screen-drill" class="screen">
+    <div class="hud">
+      <div class="hud-left">
+        <button id="drill-exit" class="btn btn-ghost btn-sm" type="button">← Sair</button>
+        <div class="hud-title">
+          <strong id="hud-drill-name">—</strong>
+          <span id="hud-drill-level" class="tag">Nível 1</span>
+        </div>
+      </div>
+
+      <div class="hud-center">
+        <div class="hud-timer" id="hud-timer">0:00</div>
+        <div class="hud-score">Pontos <strong id="hud-score">0</strong></div>
+        <div class="hud-coach" id="hud-coach"></div>
+      </div>
+
+      <div class="hud-right">
+        <div class="stat-chips" id="hud-stats"></div>
+        <div class="hp-wrap" title="Sua vida">
+          <div class="hp-bar"><i id="hud-hp"></i></div>
+          <span id="hud-hp-text">0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div id="game-stage"></div>
+      <div id="drill-banner" class="banner"></div>
+      <div id="drill-hint" class="stage-hint"></div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ RESULTS ══════════════════════ -->
+  <section id="screen-results" class="screen">
+    <div class="results-card">
+      <div class="results-head">
+        <div>
+          <p class="results-eyebrow" id="results-drill">Treino</p>
+          <h2 id="results-score">0</h2>
+          <p class="results-verdict" id="results-verdict">—</p>
+        </div>
+        <div class="results-medal" id="results-medal">—</div>
+      </div>
+
+      <div class="results-breakdown" id="results-breakdown"></div>
+
+      <div class="results-raw">
+        <h4>Números da tentativa</h4>
+        <div id="results-stats" class="results-raw-grid"></div>
+      </div>
+
+      <div class="results-chart">
+        <h4>Histórico</h4>
+        <canvas id="results-chart-canvas" width="600" height="120"></canvas>
+      </div>
+
+      <div class="results-actions">
+        <button id="results-retry" class="btn" type="button">Repetir</button>
+        <button id="results-next" class="btn btn-primary" type="button">Próximo nível</button>
+        <button id="results-menu" class="btn btn-ghost" type="button">Menu</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ STATS ══════════════════════ -->
+  <section id="screen-stats" class="screen">
+    <div class="stats-card">
+      <div class="section-head">
+        <h2>Estatísticas</h2>
+        <button id="stats-close" class="btn btn-ghost btn-sm" type="button">Fechar</button>
+      </div>
+      <div id="stats-body" class="stats-body"></div>
+      <button id="stats-reset" class="btn btn-danger btn-sm" type="button">Apagar todo o progresso</button>
+    </div>
+  </section>
+  <!-- ══════════════════════ ADMIN ══════════════════════ -->
+  <section id="screen-admin" class="screen">
+    <div class="admin-wrap">
+      <header class="admin-head">
+        <div>
+          <p class="results-eyebrow">Configuração</p>
+          <h2>Admin</h2>
+          <p class="hint">
+            Ajuste o mapa, os campeões, os inimigos e cada treino. Tudo é salvo
+            neste navegador e aplicado na hora — sem reiniciar o jogo.
+          </p>
+        </div>
+        <button id="admin-close" class="btn btn-ghost btn-sm" type="button">← Menu</button>
+      </header>
+      <nav id="admin-tabs" class="admin-tabs" aria-label="Seções do admin"></nav>
+      <div id="admin-body" class="admin-body"></div>
+      <footer class="admin-foot">
+        <span id="admin-status" class="admin-status" role="status"></span>
+        <div class="admin-foot-actions">
+          <button id="admin-export" class="btn btn-ghost btn-sm" type="button">Exportar JSON</button>
+          <button id="admin-import" class="btn btn-ghost btn-sm" type="button">Importar JSON</button>
+          <button id="admin-reset" class="btn btn-danger btn-sm" type="button">Restaurar padrões</button>
+        </div>
+      </footer>
+    </div>
+  </section>
+
+</div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "skillgap-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Treino de kiting e esquiva de League of Legends no navegador",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "probe": "node tools/probe.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
