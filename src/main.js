@@ -710,6 +710,8 @@ function renderArenaSetup() {
 
 function startArena(opts) {
   const { isBot } = opts;
+  // Store for rematch
+  app.lastArenaSettings = opts;
   const champion1 = app.champions.find(c => c.alias === $("#arena-p1-champion").value) || app.champions[0];
   let champion2;
   if (isBot) {
@@ -832,21 +834,37 @@ function finishArena() {
   app.arenaInput2 = null;
   
   const result = arena.result();
-  // Show results
   let winnerText;
   if (result.winner === 'p1') winnerText = "Jogador 1 venceu!";
   else if (result.winner === 'p2') winnerText = "Jogador 2 venceu!";
   else winnerText = "Empate!";
   
-  const el = $("#arena-banner");
-  el.textContent = winnerText + " - " + result.p1Score + " x " + result.p2Score;
-  el.className = "banner is-on good";
+  $("#arena-results-score").textContent = result.p1Score + " x " + result.p2Score;
+  $("#arena-results-verdict").textContent = winnerText;
+  $("#arena-results-medal").textContent = result.winner === 'draw' ? "🤝" : (result.winner === 'p1' ? "🏆" : "🥈");
   
-  // Show menu after delay
-  setTimeout(() => {
+  const details = [
+    { label: "Duração", value: formatTime(180 - result.duration) },
+    { label: "Jogador 1", value: result.p1Champion || "—" },
+    { label: "Jogador 2", value: result.p2Champion || "—" },
+  ];
+  
+  $("#arena-results-details").innerHTML = details.map(d => 
+    '<div class="stat-row"><span>' + d.label + '</span><span>' + d.value + '</span></div>'
+  ).join("");
+  
+  // Button handlers
+  $("#arena-results-rematch").onclick = () => {
+    // Restart with same settings
+    const lastSettings = app.lastArenaSettings || { isBot: true };
+    startArena(lastSettings);
+  };
+  $("#arena-results-menu").onclick = () => {
     renderMenu();
     showScreen("menu");
-  }, 3000);
+  };
+  
+  showScreen("arena-results");
 }
 
 function updateArenaHud(arena, input) {

@@ -122,8 +122,11 @@ export class ArenaMode {
     
     // Powerups
     this.powerups = [];
-    this.powerupSpawnTimer = 15;
+    this.powerupSpawnTimer = 5; // spawn first powerup quickly
     this.maxPowerups = 3;
+    // Spawn initial powerups
+    this.spawnPowerup();
+    this.spawnPowerup();
     
     // Buffs/debuffs
     this.activeBuffs = new Map(); // playerId -> { type, timer, value }
@@ -265,9 +268,15 @@ export class ArenaMode {
       this.powerupSpawnTimer = this.rng.range(12, 20);
     }
     
-    // Check collection
+    // Check collection and despawn
     for (let i = this.powerups.length - 1; i >= 0; i--) {
       const pu = this.powerups[i];
+      // Despawn after life expires
+      pu.life = (pu.life ?? 30) - dt;
+      if (pu.life <= 0) {
+        this.powerups.splice(i, 1);
+        continue;
+      }
       for (const player of [this.player1, this.player2]) {
         if (!player.alive) continue;
         const d = Math.hypot(player.x - pu.x, player.y - pu.y);

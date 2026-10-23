@@ -296,12 +296,16 @@ export class Scene3D {
       view.facing += diff * 0.25;
       view.model.root.rotation.y = view.facing;
 
-      // Health bar.
+      // Health bar - billboard: counter-rotate to always face camera
       const pct = Math.max(0, Math.min(1, unit.hp / Math.max(unit.maxHp, 1)));
       view.barFill.scale.x = Math.max(0.001, pct);
       view.barFill.position.x = -40 * (1 - pct);
       view.barFill.material.color.set(pct > 0.4 ? 0x46d39a : 0xff5f6d);
       view.plate.visible = unit.alive && unit.team !== "player";
+      // Counter-rotate plate to cancel model rotation (billboard effect)
+      if (view.plate) {
+        view.plate.rotation.y = -view.model.root.rotation.y;
+      }
 
       animateModel(view.model, unit, this.dt || 0.016, this.worldTime || 0);
       view.blob.visible = unit.alive;
@@ -617,9 +621,29 @@ export class Scene3D {
         inner.position.set(pu.x, 9, pu.y);
         this.scene.add(inner);
 
-        // Icon sprite (emoji as text)
-        const iconSprite = textSprite(pu.icon, "#fff");
-        iconSprite.scale.set(80, 40, 1);
+        // Icon - use a simple colored circle sprite instead of emoji text
+        const iconCanvas = document.createElement("canvas");
+        iconCanvas.width = 64;
+        iconCanvas.height = 64;
+        const ictx = iconCanvas.getContext("2d");
+        ictx.beginPath();
+        ictx.arc(32, 32, 28, 0, Math.PI * 2);
+        ictx.fillStyle = pu.color;
+        ictx.fill();
+        ictx.strokeStyle = "#fff";
+        ictx.lineWidth = 4;
+        ictx.stroke();
+        // Add a white center dot
+        ictx.beginPath();
+        ictx.arc(32, 32, 10, 0, Math.PI * 2);
+        ictx.fillStyle = "#fff";
+        ictx.fill();
+        const iconTexture = new THREE.CanvasTexture(iconCanvas);
+        iconTexture.colorSpace = THREE.SRGBColorSpace;
+        const iconSprite = new THREE.Sprite(
+          new THREE.SpriteMaterial({ map: iconTexture, transparent: true, depthTest: false })
+        );
+        iconSprite.scale.set(60, 60, 1);
         iconSprite.position.set(pu.x, 55, pu.y);
         this.scene.add(iconSprite);
 
