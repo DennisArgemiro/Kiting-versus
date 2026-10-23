@@ -6,7 +6,7 @@ import { store } from "./store.js";
 import { orderLabel } from "./engine/orders.js";
 import { formatTime, makeRng } from "./core/math.js";
 import { config, applyChampionOverrides, applyDrillOverrides } from "./config.js";
-import { syncArena } from "./drills/common.js";
+import { syncArena, ARENA } from "./drills/common.js";
 import { createAdmin } from "./admin.js";
 import { ArenaMode, createP2Input, applyP2Input, POWERUP_TYPES } from "./arena.js";
 
