@@ -212,6 +212,12 @@ class KitingDrill {
     const action = player.controller.update(dt, world);
     if (action.attacked) this.metrics.attacksStarted += 1;
 
+    // Deactivate attack-move after an attack-move attack completes (LoL behavior:
+    // press A -> show range -> click ground -> move there and attack nearest -> range hides)
+    if (input.attackMoveActive && action.attacked && player.controller.order.kind === "attackMove") {
+      input.deactivateAttackMove();
+    }
+
     // ---- timers & attack resolution ----------------------------------
     const resolved = player.tickTimers(dt);
     if (resolved) {

@@ -75,10 +75,8 @@ export class Input {
       this.mouse.x = p.x;
       this.mouse.y = p.y;
       this.clicks.push({ button: e.button, x: p.x, y: p.y, shift: e.shiftKey, ctrl: e.ctrlKey });
-      // Any click deactivates attack-move (LoL behavior: clicking exits attack-move mode)
-      if (this.attackMoveToggled) {
-        this.attackMoveToggled = false;
-      }
+      // Do NOT deactivate attack-move on click immediately.
+      // It will be deactivated after the attack happens (in the drill).
       e.preventDefault();
     });
 
@@ -102,9 +100,14 @@ export class Input {
     return codes.some((c) => this.keys.has(c));
   }
 
-  /** Attack-move mode: true when A is toggled on. Click deactivates. */
+  /** Attack-move mode: true when A is toggled on. Deactivated after attack-move attack. */
   get attackMoveActive() {
     return this.attackMoveToggled;
+  }
+
+  /** Deactivate attack-move mode (called after attack-move attack completes). */
+  deactivateAttackMove() {
+    this.attackMoveToggled = false;
   }
 
   /** Camera locked to player (Y toggles). */

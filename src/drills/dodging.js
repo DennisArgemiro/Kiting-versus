@@ -164,6 +164,11 @@ class DodgeDrill {
     const action = player.controller.update(dt, world);
     if (action.attacked) this.metrics.attacksStarted += 1;
 
+    // Deactivate attack-move after an attack-move attack completes
+    if (input.attackMoveActive && action.attacked && player.controller.order.kind === "attackMove") {
+      input.deactivateAttackMove();
+    }
+
     const resolved = player.tickTimers(dt);
     if (resolved) resolveAttack(player, world, resolved, null);
 
