@@ -174,7 +174,7 @@ export class ArenaMode {
   scheduleRespawn(player, killer) {
     player.respawnAt = this.world.time + 4;
     player.respawnPos = { x: player.team === 'p1' ? ARENA.w * 0.25 : ARENA.w * 0.75, y: ARENA.h * 0.5 };
-    if (killer) {
+    if (killer && typeof killer === 'object' && killer.killStreak !== undefined) {
       killer.killStreak = (killer.killStreak || 0) + 1;
     }
   }

@@ -678,6 +678,9 @@ function bindArenaEvents() {
 }
 
 function renderArenaSetup() {
+  // Get main menu's selected champion
+  const mainChampion = store.champion();
+  
   // Populate bot champion select
   const botSelect = $("#arena-bot-champion");
   botSelect.innerHTML = "";
@@ -704,7 +707,8 @@ function renderArenaSetup() {
     o2.textContent = champion.name;
     p2Select.appendChild(o2);
   }
-  p1Select.value = app.champions[0]?.alias || "";
+  // P1 uses main menu's selected champion
+  p1Select.value = mainChampion;
   p2Select.value = app.champions[1]?.alias || "";
 }
 

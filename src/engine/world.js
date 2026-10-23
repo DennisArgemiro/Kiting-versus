@@ -123,6 +123,15 @@ export class World {
     }
     this.projectiles = this.projectiles.filter((p) => !p.dead);
 
+    // Check for unit deaths
+    for (const unit of this.units) {
+      if (unit.deadChecked) continue;
+      if (!unit.alive) {
+        unit.deadChecked = true;
+        this.onDeath?.(unit, unit.lastDamageFrom);
+      }
+    }
+
     for (const effect of this.effects) {
       effect.life += dt;
       if (effect.kind === "ring") effect.radius += effect.grow * dt;
@@ -131,7 +140,7 @@ export class World {
   }
 
   onSkillshotHit(unit, shot) {
-    unit.takeDamage(shot.damage, this.time);
+    unit.takeDamage(shot.damage, this.time, shot.owner);
     this.effect("text", unit.x, unit.y - unit.radius, {
       text: `-${Math.round(shot.damage)}`,
       color: "#ff7b86",
@@ -141,7 +150,7 @@ export class World {
   }
 
   onProjectileHit(unit, proj) {
-    unit.takeDamage(proj.damage, this.time);
+    unit.takeDamage(proj.damage, this.time, proj.owner);
     this.effect("text", unit.x, unit.y - unit.radius, {
       text: `-${Math.round(proj.damage)}`,
       color: "#ffd27a",

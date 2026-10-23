@@ -70,7 +70,7 @@ export function resolveAttack(unit, world, target, onLanded) {
     return;
   }
   if (unit.isMelee) {
-    target.takeDamage(unit.attackDamage, world.time);
+    target.takeDamage(unit.attackDamage, world.time, unit);
     world.effect("text", target.x, target.y - unit.radius, {
       text: `-${Math.round(unit.attackDamage)}`,
       color: "#ffd27a",
