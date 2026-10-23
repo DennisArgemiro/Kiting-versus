@@ -8,6 +8,7 @@ import { formatTime, makeRng } from "./core/math.js";
 import { config, applyChampionOverrides, applyDrillOverrides } from "./config.js";
 import { syncArena } from "./drills/common.js";
 import { createAdmin } from "./admin.js";
+import { ArenaMode, createP2Input, applyP2Input, POWERUP_TYPES } from "./arena.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -25,6 +26,9 @@ const app = {
   loop: null,
   admin: null,
   config,
+  // Arena
+  arenaSession: null,
+  arenaInput2: null,
 };
 
 // ────────────────────────────── boot ──────────────────────────────
@@ -55,6 +59,7 @@ async function boot() {
   buildChampionSelect();
   renderMenu();
   bindGlobalEvents();
+  bindArenaEvents();
 
   app.admin = createAdmin({ app, onApply: applyConfig });
 }
@@ -327,6 +332,13 @@ function hintFor(drill) {
 function updateHud(run) {
   const hpPct = Math.max(0, Math.min(1, run.player.hp / run.player.maxHp));
   const hpBar = $("#hud-hp");
+  
+  // Initialize abilities HUD on first run
+  if (!updateHud._abilitiesInited) {
+    renderAbilitiesHud(run.player, "#hud-abilities");
+    updateHud._abilitiesInited = true;
+  }
+  updateAbilitiesCooldowns(run.player, "#hud-abilities");
   hpBar.style.width = `${hpPct * 100}%`;
   hpBar.parentElement.classList.toggle("low", hpPct < 0.35);
   $("#hud-hp-text").textContent = `${Math.round(run.player.hp)}`;
@@ -625,7 +637,302 @@ function bindGlobalEvents() {
       app.session.scene.resize();
       app.session.scene.setArena(app.session.run.world.arena);
     }
+    if (app.arenaSession) {
+      app.arenaSession.scene.resize();
+      app.arenaSession.scene.setArena(app.arenaSession.run.world.arena);
+    }
   });
+}
+
+function bindArenaEvents() {
+  // Arena button in main menu
+  $("#open-arena").addEventListener("click", () => {
+    renderArenaSetup();
+    showScreen("arena-setup");
+  });
+  
+  // Arena setup close
+  $("#arena-setup-close").addEventListener("click", () => {
+    showScreen("menu");
+  });
+  
+  // Bot difficulty change
+  $("#arena-bot-difficulty").addEventListener("change", () => {
+    // just updates the value
+  });
+  
+  // Start vs Bot
+  $("#arena-start-bot").addEventListener("click", () => {
+    startArena({ isBot: true });
+  });
+  
+  // Start PvP
+  $("#arena-start-pvp").addEventListener("click", () => {
+    startArena({ isBot: false });
+  });
+  
+  // Arena exit
+  $("#arena-exit").addEventListener("click", () => {
+    abortArena();
+  });
+}
+
+function renderArenaSetup() {
+  // Populate bot champion select
+  const botSelect = $("#arena-bot-champion");
+  botSelect.innerHTML = "";
+  for (const champion of app.champions) {
+    const option = document.createElement("option");
+    option.value = champion.alias;
+    option.textContent = champion.name;
+    botSelect.appendChild(option);
+  }
+  botSelect.value = app.champions[1]?.alias || app.champions[0].alias;
+  
+  // Populate PvP champion selects
+  const p1Select = $("#arena-p1-champion");
+  const p2Select = $("#arena-p2-champion");
+  p1Select.innerHTML = "";
+  p2Select.innerHTML = "";
+  for (const champion of app.champions) {
+    const o1 = document.createElement("option");
+    o1.value = champion.alias;
+    o1.textContent = champion.name;
+    p1Select.appendChild(o1);
+    const o2 = document.createElement("option");
+    o2.value = champion.alias;
+    o2.textContent = champion.name;
+    p2Select.appendChild(o2);
+  }
+  p1Select.value = app.champions[0]?.alias || "";
+  p2Select.value = app.champions[1]?.alias || "";
+}
+
+function startArena(opts) {
+  const { isBot } = opts;
+  const champion1 = app.champions.find(c => c.alias === $("#arena-p1-champion").value) || app.champions[0];
+  let champion2;
+  if (isBot) {
+    champion2 = app.champions.find(c => c.alias === $("#arena-bot-champion").value) || app.champions[1];
+  } else {
+    champion2 = app.champions.find(c => c.alias === $("#arena-p2-champion").value) || app.champions[1];
+  }
+  
+  const botDifficulty = $("#arena-bot-difficulty").value;
+  const powerupsEnabled = $("#arena-powerups-enabled").checked;
+  const rng = makeRng((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0);
+  
+  const arenaStage = $("#arena-game-stage");
+  if (!app.arenaScene) {
+    app.arenaScene = new Scene3D(arenaStage);
+    app.arenaInput = new Input(app.arenaScene.renderer.domElement, {
+      toWorld: (x, y) => app.arenaScene.clientToGround(x, y),
+    }, config.combat().cameraLocked);
+  }
+  const scene = app.arenaScene;
+  const input1 = app.arenaInput;
+  input1._cameraLocked = config.combat().cameraLocked;
+  scene.setCameraConfig({ ...config.camera(), pitch: config.combat().cameraPitch });
+  scene.reset();
+  scene.resize();
+  scene.setArena(ARENA);
+  input1.reset();
+  
+  // Create second input for PvP
+  let input2 = null;
+  if (!isBot) {
+    input2 = createP2Input(scene.renderer.domElement, {
+      toWorld: (x, y) => scene.clientToGround(x, y)
+    });
+    app.arenaInput2 = input2;
+  }
+  
+  const arena = new ArenaMode({
+    champion1,
+    champion2,
+    isBot,
+    botDifficulty,
+    powerupsEnabled,
+    rng,
+    onMoveMarker: (x, y, color) => scene.showMoveMarker(x, y, color)
+  });
+  
+  // Override showBanner for powerup messages
+  arena.showBanner = function(text, tone) {
+    const el = $("#arena-banner");
+    el.textContent = text;
+    el.className = "banner is-on " + tone;
+    clearTimeout(arena.showBanner._timer);
+    arena.showBanner._timer = setTimeout(() => {
+      el.className = "banner " + tone;
+    }, 2000);
+  };
+  
+  const loop = new Loop(
+    function(dt) {
+      arena.update(dt, input1, input2);
+      if (arena.finished && app.arenaSession && !app.arenaSession.ending) {
+        app.arenaSession.ending = true;
+        finishArena();
+      }
+    },
+    function() {
+      const now = performance.now();
+      lastDelta = Math.min(0.1, (now - lastFrame) / 1000);
+      lastFrame = now;
+      const combat = config.combat();
+      const edgeScroll = combat.cameraLocked ? null : input1.getEdgeScroll();
+      // P2 input handling
+      if (input2 && !arena.isBot) {
+        applyP2Input(arena.player2, input2, arena.world);
+      }
+      
+      arena.render(scene, { 
+        showRanges: combat.showRanges, 
+        dt: lastDelta, 
+        attackMoveActive: input1.attackMoveActive,
+        focusTarget: arena.player1.controller.target,
+        powerups: arena.powerups
+      });
+      scene.updateCamera(arena.player1, lastDelta, edgeScroll);
+      updateArenaHud(arena, input1);
+      $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
+      input1.endFrame();
+      if (input2) input2.endFrame();
+    }
+  );
+  
+  app.arenaSession = { arena, scene, input1, input2, loop, ending: false };
+  lastFrame = performance.now();
+  
+  // Populate abilities HUD for P1
+  renderAbilitiesHud(arena.player1, "#arena-hud-abilities");
+  
+  showScreen("arena");
+  requestAnimationFrame(() => {
+    scene.resize();
+    scene.setArena(ARENA);
+    loop.start();
+  });
+}
+
+function abortArena() {
+  if (!app.arenaSession) return;
+  app.arenaSession.loop.stop();
+  app.arenaSession = null;
+  app.arenaInput2 = null;
+  renderMenu();
+  showScreen("menu");
+}
+
+function finishArena() {
+  const { arena, loop } = app.arenaSession;
+  loop.stop();
+  app.arenaSession = null;
+  app.arenaInput2 = null;
+  
+  const result = arena.result();
+  // Show results
+  let winnerText;
+  if (result.winner === 'p1') winnerText = "Jogador 1 venceu!";
+  else if (result.winner === 'p2') winnerText = "Jogador 2 venceu!";
+  else winnerText = "Empate!";
+  
+  const el = $("#arena-banner");
+  el.textContent = winnerText + " - " + result.p1Score + " x " + result.p2Score;
+  el.className = "banner is-on good";
+  
+  // Show menu after delay
+  setTimeout(() => {
+    renderMenu();
+    showScreen("menu");
+  }, 3000);
+}
+
+function updateArenaHud(arena, input) {
+  // Timer
+  const min = Math.floor(arena.timeLeft / 60);
+  const sec = Math.floor(arena.timeLeft % 60).toString().padStart(2, '0');
+  $("#arena-hud-timer").textContent = min + ":" + sec;
+  
+  // Scores
+  $("#arena-p1-score").textContent = "P1: " + arena.p1Score;
+  $("#arena-p2-score").textContent = "P2: " + arena.p2Score;
+  
+  // Player 1 HP
+  const hpPct = Math.max(0, Math.min(1, arena.player1.hp / arena.player1.maxHp));
+  const hpBar = $("#arena-hud-hp");
+  hpBar.style.width = (hpPct * 100) + "%";
+  hpBar.parentElement.classList.toggle("low", hpPct < 0.35);
+  $("#arena-hud-hp-text").textContent = String(Math.round(arena.player1.hp));
+  
+  // Stats chips
+  const chips = [
+    { label: "Ordem", value: arena.player1.controller?.order?.kind || "-" }
+  ];
+  $("#arena-hud-stats").innerHTML = chips
+    .map(function(c) { return '<span class="stat-chip">' + c.label + '<b>' + c.value + '</b></span>'; })
+    .join("");
+  
+  // Update abilities cooldown display
+  updateAbilitiesCooldowns(arena.player1, "#arena-hud-abilities");
+}
+
+function renderAbilitiesHud(player, containerSelector) {
+  const container = $(containerSelector);
+  if (!container || !player.data?.spells) {
+    if (container) container.innerHTML = "";
+    return;
+  }
+  
+  const spells = player.data.spells.filter(function(s) { return s.slot !== 'P'; });
+  container.innerHTML = spells.map(function(spell) {
+    return '<div class="ability-slot" data-slot="' + spell.slot + '">' +
+      '<div class="cooldown-overlay ready" id="cd-' + spell.slot + '"></div>' +
+      '<span class="key-hint">' + spell.slot + '</span>' +
+    '</div>';
+  }).join("");
+  
+  // Apply spell backgrounds
+  spells.forEach(function(spell) {
+    const slot = container.querySelector('[data-slot="' + spell.slot + '"]');
+    if (slot) {
+      slot.style.background = getSpellBackground(spell);
+    }
+  });
+}
+
+function getSpellBackground(spell) {
+  const colors = {
+    'linear': 'linear-gradient(135deg, #4ea1ff, #2b6fbd)',
+    'circle': 'linear-gradient(135deg, #ffb454, #e67e22)',
+    'cone': 'linear-gradient(135deg, #46d39a, #2ecc71)',
+    'self': 'linear-gradient(135deg, #c8aa6e, #b8860b)'
+  };
+  return colors[spell.shape] || 'linear-gradient(135deg, #666, #444)';
+}
+
+function updateAbilitiesCooldowns(player, containerSelector) {
+  if (!player.data?.spells) return;
+  
+  for (const spell of player.data.spells.filter(function(s) { return s.slot !== 'P'; })) {
+    const cd = player.abilityCooldowns[spell.slot] || 0;
+    const overlay = document.getElementById("cd-" + spell.slot);
+    if (overlay) {
+      if (cd > 0) {
+        overlay.textContent = String(Math.ceil(cd));
+        overlay.classList.remove('ready');
+      } else {
+        overlay.classList.add('ready');
+      }
+    }
+  }
+}
+
+// Also update the regular drill HUD to show abilities
+const oldUpdateHud = content.indexOf("function updateHud(run) {");
+if (oldUpdateHud >= 0) {
+  // We'll append the abilities update to the existing updateHud
 }
 
 boot();

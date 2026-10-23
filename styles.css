@@ -397,3 +397,100 @@ kbd {
   .admin-head, .admin-body, .admin-foot, .admin-tabs { padding-left: 16px; padding-right: 16px; }
 }
 
+
+/* ───────────────────────── abilities HUD ───────────────────────── */
+.hud-abilities {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 8px; pointer-events: none; z-index: 10;
+}
+.ability-slot {
+  width: 52px; height: 52px; border-radius: 9px; background: rgba(11,14,19,0.92);
+  border: 2px solid var(--line); position: relative; display: flex; flex-direction: column;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+}
+.ability-slot.p { width: 44px; height: 44px; border-radius: 8px; }
+.ability-slot img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.ability-slot .cooldown-overlay {
+  position: absolute; inset: 0; background: rgba(0,0,0,0.75);
+  border-radius: inherit; display: flex; align-items: center; justify-content: center;
+  font: 700 18px var(--mono); color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+  pointer-events: none;
+}
+.ability-slot .cooldown-overlay.ready { display: none; }
+.ability-slot .key-hint {
+  position: absolute; bottom: 2px; right: 3px; font: 600 9px var(--mono);
+  color: rgba(255,255,255,0.7); text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+.ability-slot .key-hint.p { display: none; }
+
+/* ───────────────────────── arena setup ───────────────────────── */
+#screen-arena-setup { align-items: center; justify-content: center; padding: 24px; overflow: auto; }
+.arena-setup-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 26px 28px; width: min(680px, 100%); box-shadow: var(--shadow);
+}
+.arena-setup-body { display: flex; flex-direction: column; gap: 22px; }
+.arena-option { background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+.arena-option h3 { margin: 0 0 4px; font-size: 16px; }
+.arena-option p { margin: 0 0 16px; font-size: 13px; color: var(--muted); }
+.arena-option .field { margin-bottom: 12px; }
+.arena-divider { text-align: center; color: var(--muted-2); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+.arena-powerups-toggle { display: flex; justify-content: center; }
+.checkbox-wrap { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.checkbox-wrap input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+/* ───────────────────────── arena HUD ───────────────────────── */
+.arena-score { display: flex; gap: 24px; }
+.player-score {
+  font: 700 18px/1 var(--mono); color: var(--text); padding: 4px 12px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px;
+}
+.player-score.p1 { border-color: rgba(78,161,255,0.5); }
+.player-score.p2 { border-color: rgba(255,180,84,0.5); }
+
+#arena-game-stage {
+  position: absolute; inset: 14px;
+  border-radius: 12px; overflow: hidden;
+  border: 1px solid var(--line); background: #070a0e;
+  box-shadow: var(--shadow);
+}
+#arena-game-stage canvas { display: block; cursor: crosshair; }
+
+/* ───────────────────────── powerups ───────────────────────── */
+.powerup {
+  position: absolute; width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; cursor: pointer; z-index: 5;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  animation: powerup-pulse 2s ease-in-out infinite;
+}
+@keyframes powerup-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+.powerup.heal { background: linear-gradient(135deg, #ff4d6a, #ff1744); border: 2px solid #fff; }
+.powerup.atk-speed { background: linear-gradient(135deg, #ffb84d, #ff8f00); border: 2px solid #fff; }
+.powerup.mov-speed { background: linear-gradient(135deg, #4dff88, #00c853); border: 2px solid #fff; }
+.powerup.vamp { background: linear-gradient(135deg, #d84dff, #aa00ff); border: 2px solid #fff; }
+.powerup.atk-speed-nerf { background: linear-gradient(135deg, #ff4d4d, #b71c1c); border: 2px dashed #fff; }
+.powerup.mov-speed-nerf { background: linear-gradient(135deg, #4d4dff, #1565c0); border: 2px dashed #fff; }
+
+.powerup-tooltip {
+  position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.9); padding: 6px 10px; border-radius: 6px;
+  font-size: 11px; white-space: nowrap; pointer-events: none; opacity: 0;
+  transition: opacity 0.15s; margin-bottom: 6px;
+}
+.powerup:hover .powerup-tooltip { opacity: 1; }
+
+/* ───────────────────────── arena banner ───────────────────────── */
+#arena-banner {
+  position: absolute; top: 26px; left: 50%; transform: translateX(-50%);
+  padding: 9px 20px; border-radius: 999px; background: rgba(11, 14, 19, 0.92);
+  border: 1px solid var(--line); font-weight: 600; font-size: 13.5px; opacity: 0;
+  transition: opacity .25s; pointer-events: none; white-space: nowrap;
+}
+#arena-banner.is-on { opacity: 1; }
+#arena-banner.good { border-color: rgba(70,211,154,.5); color: #8ce6c1; }
+#arena-banner.bad { border-color: rgba(255,95,109,.5); color: #ff98a0; }
+

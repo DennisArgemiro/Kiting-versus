@@ -25,6 +25,7 @@
           <span>Campanha</span>
           <select id="champion-select"></select>
         </label>
+        <button id="open-arena" class="btn btn-primary" type="button">Arena</button>
         <button id="open-stats" class="btn btn-ghost" type="button">Estatísticas</button>
         <button id="open-admin" class="btn btn-ghost" type="button">Admin</button>
       </div>
@@ -104,6 +105,9 @@
       </div>
     </div>
 
+    <!-- Abilities HUD -->
+    <div class="hud-abilities" id="hud-abilities"></div>
+
     <div class="stage">
       <div id="game-stage"></div>
       <div id="drill-banner" class="banner"></div>
@@ -140,6 +144,91 @@
         <button id="results-next" class="btn btn-primary" type="button">Próximo nível</button>
         <button id="results-menu" class="btn btn-ghost" type="button">Menu</button>
       </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ ARENA ══════════════════════ -->
+  <section id="screen-arena-setup" class="screen">
+    <div class="arena-setup-card">
+      <div class="section-head">
+        <h2>Modo Arena</h2>
+        <button id="arena-setup-close" class="btn btn-ghost btn-sm" type="button">← Menu</button>
+      </div>
+      <div class="arena-setup-body">
+        <div class="arena-option">
+          <h3>Contra Bot</h3>
+          <p>Pratique contra um oponente controlado por IA com dificuldade ajustável.</p>
+          <div class="field">
+            <span>Dificuldade</span>
+            <select id="arena-bot-difficulty">
+              <option value="easy">Fácil</option>
+              <option value="normal" selected>Normal</option>
+              <option value="hard">Difícil</option>
+              <option value="expert">Expert</option>
+            </select>
+          </div>
+          <div class="field">
+            <span>Campeão do Bot</span>
+            <select id="arena-bot-champion"></select>
+          </div>
+          <button id="arena-start-bot" class="btn btn-primary" type="button">Iniciar vs Bot</button>
+        </div>
+        <div class="arena-divider">ou</div>
+        <div class="arena-option">
+          <h3>Jogador vs Jogador (Local)</h3>
+          <p>Dois jogadores no mesmo teclado. Jogador 1: Mouse + QWER. Jogador 2: Teclas WASD + 1234.</p>
+          <div class="field">
+            <span>Jogador 1 (Campeão)</span>
+            <select id="arena-p1-champion"></select>
+          </div>
+          <div class="field">
+            <span>Jogador 2 (Campeão)</span>
+            <select id="arena-p2-champion"></select>
+          </div>
+          <button id="arena-start-pvp" class="btn btn-primary" type="button">Iniciar PvP Local</button>
+        </div>
+        <div class="arena-powerups-toggle">
+          <label class="checkbox-wrap">
+            <input type="checkbox" id="arena-powerups-enabled" checked>
+            <span>Power-ups ativados</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ ARENA GAME ══════════════════════ -->
+  <section id="screen-arena" class="screen">
+    <div class="hud">
+      <div class="hud-left">
+        <button id="arena-exit" class="btn btn-ghost btn-sm" type="button">← Sair</button>
+        <div class="hud-title">
+          <strong id="arena-hud-mode">Arena</strong>
+          <span id="arena-hud-timer" class="tag">0:00</span>
+        </div>
+      </div>
+
+      <div class="hud-center">
+        <div class="arena-score">
+          <span id="arena-p1-score" class="player-score">P1: 0</span>
+          <span id="arena-p2-score" class="player-score">P2: 0</span>
+        </div>
+      </div>
+
+      <div class="hud-right">
+        <div class="stat-chips" id="arena-hud-stats"></div>
+        <div class="hp-wrap" title="Sua vida">
+          <div class="hp-bar"><i id="arena-hud-hp"></i></div>
+          <span id="arena-hud-hp-text">0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud-abilities" id="arena-hud-abilities"></div>
+
+    <div class="stage">
+      <div id="arena-game-stage"></div>
+      <div id="arena-banner" class="banner"></div>
     </div>
   </section>
 

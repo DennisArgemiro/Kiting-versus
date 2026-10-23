@@ -139,6 +139,7 @@ export class Scene3D {
     this.unitViews = new Map();
     this.shotViews = new Map();
     this.projectileViews = new Map();
+    this.powerupViews = new Map();
     this.markers = [];
     this.effects = [];
 
@@ -569,6 +570,88 @@ export class Scene3D {
     }
   }
 
+  /** Render powerups on the ground. */
+  syncPowerups(powerups) {
+    if (!powerups || !powerups.length) {
+      // Clean up any existing powerup views
+      for (const [, view] of this.powerupViews) {
+        this.scene.remove(view.mesh);
+        view.mesh.geometry.dispose();
+        view.mesh.material.dispose();
+      }
+      this.powerupViews.clear();
+      return;
+    }
+
+    const seen = new Set();
+    for (const pu of powerups) {
+      const key = `${pu.x.toFixed(0)}:${pu.y.toFixed(0)}:${pu.id}`;
+      seen.add(key);
+      let view = this.powerupViews.get(key);
+      if (!view) {
+        // Create a glowing ring for the powerup
+        const ringGeo = new THREE.RingGeometry(25, 35, 32);
+        const mat = new THREE.MeshBasicMaterial({
+          color: pu.color,
+          transparent: true,
+          opacity: 0.6,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        const ring = new THREE.Mesh(ringGeo, mat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(pu.x, 8, pu.y);
+        this.scene.add(ring);
+
+        // Inner glow
+        const innerGeo = new THREE.RingGeometry(15, 22, 32);
+        const innerMat = new THREE.MeshBasicMaterial({
+          color: pu.color,
+          transparent: true,
+          opacity: 0.9,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        const inner = new THREE.Mesh(innerGeo, innerMat);
+        inner.rotation.x = -Math.PI / 2;
+        inner.position.set(pu.x, 9, pu.y);
+        this.scene.add(inner);
+
+        // Icon sprite (emoji as text)
+        const iconSprite = textSprite(pu.icon, "#fff");
+        iconSprite.scale.set(80, 40, 1);
+        iconSprite.position.set(pu.x, 55, pu.y);
+        this.scene.add(iconSprite);
+
+        view = { ring, inner, icon: iconSprite, mat, innerMat };
+        this.powerupViews.set(key, view);
+      }
+
+      // Animate
+      const time = this.worldTime || 0;
+      view.ring.position.set(pu.x, 8 + Math.sin(time * 3) * 3, pu.y);
+      view.inner.position.set(pu.x, 9 + Math.sin(time * 3 + 0.5) * 2, pu.y);
+      view.icon.position.set(pu.x, 55 + Math.sin(time * 2) * 5, pu.y);
+      view.ring.rotation.z += 0.02;
+      view.inner.rotation.z -= 0.03;
+      view.ring.scale.setScalar(1 + Math.sin(time * 4) * 0.1);
+      view.inner.scale.setScalar(1 + Math.cos(time * 4) * 0.15);
+    }
+
+    // Remove collected/despawned powerups
+    for (const [key, view] of this.powerupViews) {
+      if (seen.has(key)) continue;
+      this.scene.remove(view.ring, view.inner, view.icon);
+      view.ring.geometry.dispose();
+      view.inner.geometry.dispose();
+      view.icon.material.map.dispose();
+      view.ring.material.dispose();
+      view.inner.material.dispose();
+      view.icon.material.dispose();
+      this.powerupViews.delete(key);
+    }
+  }
+
   // ── camera ───────────────────────────────────────────────────────
 
   updateCamera(player, dt, edgeScroll = null) {
@@ -639,6 +722,7 @@ export class Scene3D {
     this.syncEffects(world);
     this.setFocusTarget(opts.focusTarget);
     this.setPunishTarget(opts.punishTarget || null);
+    this.syncPowerups(opts.powerups);
     this.updateCamera(opts.player, dt);
 
     for (let i = this.markers.length - 1; i >= 0; i--) {
