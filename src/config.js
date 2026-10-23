@@ -35,7 +35,7 @@ export const DEFAULTS = {
     showRanges: true,
     cameraLocked: true,
     attackMoveTargetNearest: true,
-    cameraPitch: 30, // degrees from horizontal down to focus point; lower = flatter LoL-style
+    cameraPitch: 55, // degrees from horizontal down to focus point; lower = flatter LoL-style
   },
   // alias -> partial champion stats
   champions: {},
