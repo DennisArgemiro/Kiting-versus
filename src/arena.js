@@ -2,6 +2,7 @@ import { World } from "./engine/world.js";
 import { Champion } from "./engine/unit.js";
 import { skillshotFromSpell } from "./engine/skillshot.js";
 import { makePlayer, resolveAttack, applyInput, castAbility, tickAbilities, tuneEnemy, ARENA, ringPositions } from "./drills/common.js";
+import { Controller } from "./engine/orders.js";
 import { config } from "./config.js";
 import { clamp, norm, makeRng } from "./core/math.js";
 
@@ -98,7 +99,6 @@ export class ArenaMode {
     this.player1 = makePlayer(champion1, ARENA.w * 0.25, ARENA.h * 0.5, 1);
     this.player1.team = 'p1';
     this.player1.isPlayer = true;
-    this.player1.controller = { ...this.player1.controller }; // ensure separate controller
     this.world.add(this.player1);
     
     this.player2 = makePlayer(champion2, ARENA.w * 0.75, ARENA.h * 0.5, 1);
@@ -110,7 +110,6 @@ export class ArenaMode {
     } else {
       this.player2.isPlayer = true;
     }
-    this.player2.controller = { ...this.player2.controller };
     this.world.add(this.player2);
     
     // State

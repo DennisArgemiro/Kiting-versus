@@ -929,10 +929,4 @@ function updateAbilitiesCooldowns(player, containerSelector) {
   }
 }
 
-// Also update the regular drill HUD to show abilities
-const oldUpdateHud = content.indexOf("function updateHud(run) {");
-if (oldUpdateHud >= 0) {
-  // We'll append the abilities update to the existing updateHud
-}
-
 boot();
