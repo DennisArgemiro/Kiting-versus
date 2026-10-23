@@ -574,14 +574,18 @@ export class Scene3D {
     }
   }
 
-  /** Render powerups on the ground. */
+  /** Render powerups as 3D models. */
   syncPowerups(powerups) {
     if (!powerups || !powerups.length) {
       // Clean up any existing powerup views
       for (const [, view] of this.powerupViews) {
-        this.scene.remove(view.mesh);
-        view.mesh.geometry.dispose();
-        view.mesh.material.dispose();
+        this.scene.remove(view.group);
+        view.core.geometry.dispose();
+        view.core.material.dispose();
+        view.ring.geometry.dispose();
+        view.ring.material.dispose();
+        view.iconSprite.material.map.dispose();
+        view.iconSprite.material.dispose();
       }
       this.powerupViews.clear();
       return;
@@ -593,91 +597,109 @@ export class Scene3D {
       seen.add(key);
       let view = this.powerupViews.get(key);
       if (!view) {
-        // Create a glowing ring for the powerup
-        const ringGeo = new THREE.RingGeometry(25, 35, 32);
-        const mat = new THREE.MeshBasicMaterial({
-          color: pu.color,
-          transparent: true,
-          opacity: 0.6,
-          side: THREE.DoubleSide,
-          depthWrite: false,
-        });
-        const ring = new THREE.Mesh(ringGeo, mat);
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.set(pu.x, 8, pu.y);
-        this.scene.add(ring);
-
-        // Inner glow
-        const innerGeo = new THREE.RingGeometry(15, 22, 32);
-        const innerMat = new THREE.MeshBasicMaterial({
+        // Create a 3D powerup model
+        const group = new THREE.Group();
+        
+        // Core sphere
+        const coreGeo = new THREE.SphereGeometry(18, 24, 24);
+        const coreMat = new THREE.MeshBasicMaterial({
           color: pu.color,
           transparent: true,
           opacity: 0.9,
+        });
+        const core = new THREE.Mesh(coreGeo, coreMat);
+        core.position.y = 22;
+        group.add(core);
+        
+        // Outer ring
+        const ringGeo = new THREE.RingGeometry(22, 28, 32);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: pu.color,
+          transparent: true,
+          opacity: 0.4,
           side: THREE.DoubleSide,
           depthWrite: false,
         });
-        const inner = new THREE.Mesh(innerGeo, innerMat);
-        inner.rotation.x = -Math.PI / 2;
-        inner.position.set(pu.x, 9, pu.y);
-        this.scene.add(inner);
-
-        // Icon - use a simple colored circle sprite instead of emoji text
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 22;
+        group.add(ring);
+        
+        // Icon sprite
         const iconCanvas = document.createElement("canvas");
-        iconCanvas.width = 64;
-        iconCanvas.height = 64;
+        iconCanvas.width = 128;
+        iconCanvas.height = 128;
         const ictx = iconCanvas.getContext("2d");
-        ictx.beginPath();
-        ictx.arc(32, 32, 28, 0, Math.PI * 2);
-        ictx.fillStyle = pu.color;
-        ictx.fill();
-        ictx.strokeStyle = "#fff";
-        ictx.lineWidth = 4;
-        ictx.stroke();
-        // Add a white center dot
-        ictx.beginPath();
-        ictx.arc(32, 32, 10, 0, Math.PI * 2);
+        ictx.font = "bold 80px Arial";
+        ictx.textAlign = "center";
+        ictx.textBaseline = "middle";
         ictx.fillStyle = "#fff";
-        ictx.fill();
+        ictx.shadowColor = "#000";
+        ictx.shadowBlur = 8;
+        ictx.fillText(pu.icon, 64, 72);
         const iconTexture = new THREE.CanvasTexture(iconCanvas);
         iconTexture.colorSpace = THREE.SRGBColorSpace;
         const iconSprite = new THREE.Sprite(
           new THREE.SpriteMaterial({ map: iconTexture, transparent: true, depthTest: false })
         );
-        iconSprite.scale.set(60, 60, 1);
-        iconSprite.position.set(pu.x, 55, pu.y);
-        this.scene.add(iconSprite);
-
-        view = { ring, inner, icon: iconSprite, mat, innerMat };
+        iconSprite.scale.set(50, 50, 1);
+        iconSprite.position.y = 45;
+        group.add(iconSprite);
+        
+        group.position.set(pu.x, 0, pu.y);
+        this.scene.add(group);
+        
+        view = { group, core, ring, iconSprite, mat: coreMat, ringMat, pu };
         this.powerupViews.set(key, view);
       }
 
       // Animate
       const time = this.worldTime || 0;
-      view.ring.position.set(pu.x, 8 + Math.sin(time * 3) * 3, pu.y);
-      view.inner.position.set(pu.x, 9 + Math.sin(time * 3 + 0.5) * 2, pu.y);
-      view.icon.position.set(pu.x, 55 + Math.sin(time * 2) * 5, pu.y);
-      view.ring.rotation.z += 0.02;
-      view.inner.rotation.z -= 0.03;
-      view.ring.scale.setScalar(1 + Math.sin(time * 4) * 0.1);
-      view.inner.scale.setScalar(1 + Math.cos(time * 4) * 0.15);
+      view.group.position.set(pu.x, 0, pu.y);
+      view.core.rotation.y += 0.02;
+      view.core.position.y = 22 + Math.sin(time * 3) * 4;
+      view.ring.rotation.z += 0.015;
+      view.ring.scale.setScalar(1 + Math.sin(time * 4) * 0.15);
+      view.iconSprite.position.y = 45 + Math.sin(time * 2) * 5;
+      view.group.position.set(pu.x, 0, pu.y);
+      
+      // Update colors if changed
+      if (view.pu.color !== pu.color) {
+        view.pu.color = pu.color;
+        view.core.material.color.set(pu.color);
+        view.ring.material.color.set(pu.color);
+      }
     }
 
     // Remove collected/despawned powerups
     for (const [key, view] of this.powerupViews) {
       if (seen.has(key)) continue;
-      this.scene.remove(view.ring, view.inner, view.icon);
+      this.scene.remove(view.group);
+      view.core.geometry.dispose();
+      view.core.material.dispose();
       view.ring.geometry.dispose();
-      view.inner.geometry.dispose();
-      view.icon.material.map.dispose();
       view.ring.material.dispose();
-      view.inner.material.dispose();
-      view.icon.material.dispose();
+      view.iconSprite.material.map.dispose();
+      view.iconSprite.material.dispose();
       this.powerupViews.delete(key);
+    }
+  }  /**
+   * Applies the admin camera settings. The FOV change needs a projection
+   * update, and a zoom change is picked up by updateCamera on the next frame.
+   */
+  setCameraConfig({ zoom = 1, fov = 42, distance = 850, pitch = 30 } = {}) {
+    this.zoom = zoom > 0 ? zoom : 1;
+    this.cameraDistance = distance > 0 ? distance : 850;
+    this.cameraPitch = pitch > 0 ? pitch : 30;
+    if (this.camera.fov !== fov) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
     }
   }
 
-  // ── camera ───────────────────────────────────────────────────────
-
+  /**
+   * Updates camera position to follow the player.
+   */
   updateCamera(player, dt, edgeScroll = null) {
     if (!player) return;
     const arena = this.arena;
@@ -718,20 +740,6 @@ export class Scene3D {
       this.cameraFocus.z + distance,
     );
     this.camera.lookAt(this.cameraFocus.x, 0, this.cameraFocus.z);
-  }
-
-  /**
-   * Applies the admin camera settings. The FOV change needs a projection
-   * update, and a zoom change is picked up by updateCamera on the next frame.
-   */
-  setCameraConfig({ zoom = 1, fov = 42, distance = 850, pitch = 30 } = {}) {
-    this.zoom = zoom > 0 ? zoom : 1;
-    this.cameraDistance = distance > 0 ? distance : 850;
-    this.cameraPitch = pitch > 0 ? pitch : 30;
-    if (this.camera.fov !== fov) {
-      this.camera.fov = fov;
-      this.camera.updateProjectionMatrix();
-    }
   }
 
   render(world, opts = {}) {

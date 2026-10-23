@@ -225,6 +225,7 @@
     </div>
 
     <div class="hud-abilities" id="arena-hud-abilities"></div>
+    <div class="hud-powerups" id="arena-hud-powerups"></div>
 
     <div class="stage">
       <div id="arena-game-stage"></div>
@@ -293,5 +294,25 @@
 
 </div>
 <script type="module" src="./src/main.js"></script>
+
+  <!-- ══════════════════════ ARENA RESULT MODAL ══════════════════════ -->
+  <div id="arena-result-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title">—</h2>
+        <div class="modal-medal">—</div>
+      </div>
+      <div class="modal-body">
+        <div class="modal-score">0 x 0</div>
+        <div class="modal-champions">—</div>
+        <div class="modal-duration">—</div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-rematch btn btn-primary" type="button">Revanche</button>
+        <button class="modal-menu btn btn-ghost" type="button">Menu</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

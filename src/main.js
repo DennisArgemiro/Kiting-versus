@@ -646,38 +646,51 @@ function bindGlobalEvents() {
 
 function bindArenaEvents() {
   // Arena button in main menu
-  $("#open-arena").addEventListener("click", () => {
+  const openArenaBtn = $("#open-arena");
+  if (openArenaBtn) openArenaBtn.addEventListener("click", () => {
     renderArenaSetup();
     showScreen("arena-setup");
   });
   
   // Arena setup close
-  $("#arena-setup-close").addEventListener("click", () => {
-    showScreen("menu");
-  });
+  const closeBtn = $("#arena-setup-close");
+  if (closeBtn) closeBtn.addEventListener("click", () => showScreen("menu"));
   
   // Bot difficulty change
-  $("#arena-bot-difficulty").addEventListener("change", () => {
-    // just updates the value
-  });
+  const diffSel = $("#arena-bot-difficulty");
+  if (diffSel) diffSel.addEventListener("change", () => {});
   
   // Start vs Bot
-  $("#arena-start-bot").addEventListener("click", () => {
-    startArena({ isBot: true });
-  });
+  const startBotBtn = $("#arena-start-bot");
+  if (startBotBtn) startBotBtn.addEventListener("click", () => startArena({ isBot: true, mode: 'bot' }));
   
-  // Start PvP
-  $("#arena-start-pvp").addEventListener("click", () => {
-    startArena({ isBot: false });
-  });
+  // Start PvP Local
+  const startPvpBtn = $("#arena-start-pvp");
+  if (startPvpBtn) startPvpBtn.addEventListener("click", () => startArena({ isBot: false, mode: 'local' }));
+  
+  // Start PvP Online (if button exists)
+  const startOnlineBtn = $("#arena-start-online");
+  if (startOnlineBtn) startOnlineBtn.addEventListener("click", () => startArena({ isBot: false, mode: 'online' }));
   
   // Arena exit
-  $("#arena-exit").addEventListener("click", () => {
-    abortArena();
+  const exitBtn = $("#arena-exit");
+  if (exitBtn) exitBtn.addEventListener("click", abortArena);
+  
+  // Modal buttons
+  const rematchBtn = $("#arena-result-modal .modal-rematch");
+  if (rematchBtn) rematchBtn.addEventListener("click", () => {
+    hideArenaResultModal();
+    const lastSettings = app.lastArenaSettings || { isBot: true };
+    startArena(lastSettings);
   });
-}
-
-function renderArenaSetup() {
+  
+  const menuBtn = $("#arena-result-modal .modal-menu");
+  if (menuBtn) menuBtn.addEventListener("click", () => {
+    hideArenaResultModal();
+    renderMenu();
+    showScreen("menu");
+  });
+}function renderArenaSetup() {
   // Get main menu's selected champion
   const mainChampion = store.champion();
   
@@ -713,9 +726,16 @@ function renderArenaSetup() {
 }
 
 function startArena(opts) {
-  const { isBot } = opts;
+  const { isBot, mode = 'bot' } = opts;
   // Store for rematch
   app.lastArenaSettings = opts;
+  
+  if (mode === 'online') {
+    // Go to lobby screen for online matchmaking
+    startOnlineLobby(opts);
+    return;
+  }
+  
   const champion1 = app.champions.find(c => c.alias === $("#arena-p1-champion").value) || app.champions[0];
   let champion2;
   if (isBot) {
@@ -774,6 +794,17 @@ function startArena(opts) {
     }, 2000);
   };
   
+  // Initialize powerup HUD
+  if (!document.getElementById("arena-hud-powerups")) {
+    const hudAbilities = $("#arena-hud-abilities");
+    if (hudAbilities) {
+      const powerupHud = document.createElement("div");
+      powerupHud.className = "hud-powerups";
+      powerupHud.id = "arena-hud-powerups";
+      hudAbilities.parentNode.insertBefore(powerupHud, hudAbilities.nextSibling);
+    }
+  }
+  
   const loop = new Loop(
     function(dt) {
       arena.update(dt, input1, input2);
@@ -822,7 +853,61 @@ function startArena(opts) {
   });
 }
 
-function abortArena() {
+function startOnlineLobby(opts) {
+  // For now, simulate online matchmaking with a 10s countdown
+  // In production, this would connect to a matchmaking server
+  showScreen("arena-lobby");
+  
+  const champion1 = app.champions.find(c => c.alias === $("#arena-p1-champion").value) || app.champions[0];
+  const champion2 = app.champions.find(c => c.alias === $("#arena-p2-champion").value) || app.champions[1];
+  
+  // Update lobby UI
+  $("#lobby-p1 .name").textContent = champion1.name;
+  $("#lobby-p1 .avatar").textContent = getChampionEmoji(champion1.alias);
+  $("#lobby-p1 .ready").textContent = "Pronto";
+  
+  // Simulate opponent joining after 2 seconds
+  setTimeout(() => {
+    $("#lobby-p2 .name").textContent = champion2.name;
+    $("#lobby-p2 .avatar").textContent = getChampionEmoji(champion2.alias);
+    $("#lobby-p2 .ready").textContent = "Pronto";
+  }, 2000);
+  
+  let countdown = 10;
+  $("#lobby-timer").textContent = countdown;
+  $("#lobby-status").textContent = "Adversário encontrado! Iniciando em...";
+  
+  const timer = setInterval(() => {
+    countdown--;
+    $("#lobby-timer").textContent = countdown;
+    if (countdown <= 0) {
+      clearInterval(timer);
+      // Start the actual match
+      startArena({ ...opts, isBot: false, mode: 'local' });
+    }
+  }, 1000);
+  
+  // Allow canceling
+  const cancelFn = () => {
+    clearInterval(timer);
+    window.removeEventListener("keydown", cancelFn);
+    renderMenu();
+    showScreen("menu");
+  };
+  window.addEventListener("keydown", cancelFn);
+}
+
+function getChampionEmoji(alias) {
+  const emojis = {
+    Ezreal: '🏹', Caitlyn: '🎯', Ashe: '🏹', Jinx: '💥',
+    Kaisa: '🦋', Lucian: '🔫', MissFortune: '🔫', Tristana: '🚀',
+    Vayne: '🌙', Varus: '🏹', Xayah: '🪶', Aphelios: '🌙',
+    Ahri: '🦊', Morgana: '🌑', Lux: '✨', Brand: '🔥',
+    Thresh: '⛓️', Nautilus: '⚓', Blitzcrank: '🤖', Ekko: '⏰',
+    Annie: '🧸', Zed: '🗡️', Syndra: '🔮', Velkoz: '👁️'
+  };
+  return emojis[alias] || '❓';
+}function abortArena() {
   if (!app.arenaSession) return;
   app.arenaSession.loop.stop();
   app.arenaSession = null;
@@ -843,32 +928,52 @@ function finishArena() {
   else if (result.winner === 'p2') winnerText = "Jogador 2 venceu!";
   else winnerText = "Empate!";
   
-  $("#arena-results-score").textContent = result.p1Score + " x " + result.p2Score;
-  $("#arena-results-verdict").textContent = winnerText;
-  $("#arena-results-medal").textContent = result.winner === 'draw' ? "🤝" : (result.winner === 'p1' ? "🏆" : "🥈");
+  // Show modal instead of separate screen
+  showArenaResultModal({
+    winner: result.winner,
+    p1Score: result.p1Score,
+    p2Score: result.p2Score,
+    p1Champion: result.p1Champion,
+    p2Champion: result.p2Champion,
+    duration: 180 - result.duration,
+    winnerText
+  });
+}
+
+function showArenaResultModal(data) {
+  const modal = $("#arena-result-modal");
+  if (!modal) return;
   
-  const details = [
-    { label: "Duração", value: formatTime(180 - result.duration) },
-    { label: "Jogador 1", value: result.p1Champion || "—" },
-    { label: "Jogador 2", value: result.p2Champion || "—" },
-  ];
-  
-  $("#arena-results-details").innerHTML = details.map(d => 
-    '<div class="stat-row"><span>' + d.label + '</span><span>' + d.value + '</span></div>'
-  ).join("");
+  // Fill content
+  modal.querySelector(".modal-title").textContent = data.winner === 'draw' ? "Empate!" : data.winnerText;
+  modal.querySelector(".modal-score").textContent = data.p1Score + " x " + data.p2Score;
+  modal.querySelector(".modal-champions").innerHTML = 
+    '<span class="p1">' + data.p1Champion + '</span> vs <span class="p2">' + data.p2Champion + '</span>';
+  modal.querySelector(".modal-duration").textContent = "Duração: " + formatTime(data.duration);
+  modal.querySelector(".modal-medal").textContent = data.winner === 'draw' ? "🤝" : (data.winner === 'p1' ? "🏆" : "🥈");
   
   // Button handlers
-  $("#arena-results-rematch").onclick = () => {
-    // Restart with same settings
+  const rematchBtn = modal.querySelector(".modal-rematch");
+  const menuBtn = modal.querySelector(".modal-menu");
+  
+  rematchBtn.onclick = () => {
+    hideArenaResultModal();
     const lastSettings = app.lastArenaSettings || { isBot: true };
     startArena(lastSettings);
   };
-  $("#arena-results-menu").onclick = () => {
+  
+  menuBtn.onclick = () => {
+    hideArenaResultModal();
     renderMenu();
     showScreen("menu");
   };
   
-  showScreen("arena-results");
+  modal.classList.add("visible");
+}
+
+function hideArenaResultModal() {
+  const modal = $("#arena-result-modal");
+  if (modal) modal.classList.remove("visible");
 }
 
 function updateArenaHud(arena, input) {
@@ -898,6 +1003,28 @@ function updateArenaHud(arena, input) {
   
   // Update abilities cooldown display
   updateAbilitiesCooldowns(arena.player1, "#arena-hud-abilities");
+  
+  // Update powerup HUD for player 1
+  updatePowerupHud(arena, "p1", "#arena-hud-powerups");
+}
+
+function updatePowerupHud(arena, playerId, containerSelector) {
+  const container = $(containerSelector);
+  if (!container) return;
+  
+  const powerups = arena.getActivePowerups(playerId);
+  if (!powerups.length) {
+    container.innerHTML = "";
+    return;
+  }
+  
+  container.innerHTML = powerups.map(function(p) {
+    const progress = (p.timer / p.maxTimer) * 360;
+    return '<div class="powerup-hud-item" style="--powerup-color: ' + p.color + '; --progress: ' + progress + 'deg;">' +
+      '<div class="cooldown-ring"></div>' +
+      '<span class="timer-text">' + Math.ceil(p.timer) + 's</span>' +
+    '</div>';
+  }).join("");
 }
 
 function renderAbilitiesHud(player, containerSelector) {

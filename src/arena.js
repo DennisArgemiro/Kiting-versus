@@ -2,7 +2,6 @@ import { World } from "./engine/world.js";
 import { Champion } from "./engine/unit.js";
 import { skillshotFromSpell } from "./engine/skillshot.js";
 import { makePlayer, resolveAttack, applyInput, castAbility, tickAbilities, tuneEnemy, ARENA, ringPositions } from "./drills/common.js";
-import { Controller } from "./engine/orders.js";
 import { config } from "./config.js";
 import { clamp, norm, makeRng } from "./core/math.js";
 
@@ -124,14 +123,13 @@ export class ArenaMode {
     this.powerups = [];
     this.powerupSpawnTimer = 5; // spawn first powerup quickly
     this.maxPowerups = 3;
-    // Spawn initial powerups
     this.spawnPowerup();
     this.spawnPowerup();
+    
+    // Active powerup effects for HUD
+    this.activePowerups = new Map(); // playerId -> [{ type, timer, maxTimer, icon, color, name }]
     
     // Buffs/debuffs
-    this.activeBuffs = new Map(); // playerId -> { type, timer, value }
-    
-    // Damage tracking
     this.world.onDamage = (unit, amount, source) => {
       if (source && source.team !== unit.team) {
         if (unit.team === 'p1') {
@@ -191,6 +189,9 @@ export class ArenaMode {
     
     // Update buffs/debuffs
     this.updateBuffs(dt);
+    
+    // Update active powerup timers
+    this.updatePowerupTimers(dt);
     
     // Player 1 input (always human)
     const p1Input = input1;
@@ -259,6 +260,32 @@ export class ArenaMode {
     }
   }
   
+  updatePowerupTimers(dt) {
+    for (const [playerId, effects] of this.activePowerups) {
+      const player = playerId === 'p1' ? this.player1 : this.player2;
+      for (let i = effects.length - 1; i >= 0; i--) {
+        const effect = effects[i];
+        effect.timer -= dt;
+        if (effect.timer <= 0) {
+          // Remove effect
+          if (effect.type === 'atk-speed') player.buffAttackSpeed = 1;
+          else if (effect.type === 'mov-speed') player.buffMoveSpeed = 1;
+          else if (effect.type === 'vamp') player.buffVamp = 0;
+          else if (effect.type === 'atk-speed-nerf') player.debuffAttackSpeed = 1;
+          else if (effect.type === 'mov-speed-nerf') player.debuffMoveSpeed = 1;
+          effects.splice(i, 1);
+        }
+      }
+      if (effects.length === 0) {
+        this.activePowerups.delete(playerId);
+      }
+    }
+  }
+  
+  getActivePowerups(playerId) {
+    return this.activePowerups.get(playerId) || [];
+  }
+  
   updatePowerups(dt) {
     this.powerupSpawnTimer -= dt;
     
@@ -308,7 +335,24 @@ export class ArenaMode {
     if (this.onMoveMarker) {
       this.onMoveMarker(pu.x, pu.y, pu.color);
     }
-    // Show banner
+    
+    // Track for HUD
+    const playerId = player.team;
+    if (!this.activePowerups.has(playerId)) {
+      this.activePowerups.set(playerId, []);
+    }
+    
+    if (pu.duration > 0) {
+      this.activePowerups.get(playerId).push({
+        type: pu.id,
+        timer: pu.duration,
+        maxTimer: pu.duration,
+        icon: pu.icon,
+        color: pu.color,
+        name: pu.name
+      });
+    }
+    
     if (this.showBanner) this.showBanner(msg, 'good');
   }
   
@@ -408,7 +452,6 @@ export class ArenaMode {
   }
   
   getSpellIcon(spell) {
-    // Return emoji based on spell shape/type
     const icons = {
       'linear': '➤',
       'circle': '⬤',
@@ -423,7 +466,9 @@ export class ArenaMode {
       winner: this.outcome,
       p1Score: this.p1Score,
       p2Score: this.p2Score,
-      duration: 180 - this.timeLeft
+      duration: 180 - this.timeLeft,
+      p1Champion: this.player1.data?.name || "—",
+      p2Champion: this.player2.data?.name || "—"
     };
   }
 }
@@ -443,7 +488,6 @@ export function createP2Input(canvas, world) {
     const code = e.code;
     if (!keys.has(code)) pressed.add(code);
     keys.add(code);
-    // Prevent default for game keys
     if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyR', 'KeyF', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Space', 'ShiftLeft', 'ShiftRight'].includes(code)) {
       e.preventDefault();
     }
@@ -535,17 +579,9 @@ export function applyP2Input(player, input, world) {
   const slotMap = { 'Digit1': 'Q', 'Digit2': 'W', 'Digit3': 'E', 'Digit4': 'R' };
   for (const [key, slot] of Object.entries(slotMap)) {
     if (input.hit(key)) {
-      // Aim towards mouse position
       castAbility(player, slot, input.mouse.x, input.mouse.y, world);
     }
   }
   
-  // Mouse click for targeting (same as P1)
-  for (const click of input.takeClicks()) {
-    // Use the same logic as applyInput for clicks
-    // ... but simplified for P2
-  }
-  
-  // Update controller
-  controller.update(0, world); // dt will be applied in main loop
+  controller.update(0, world);
 }
