@@ -1,6 +1,9 @@
 /**
  * The 3D presentation layer.
- * Simplified version - works like the drill mode.
+ *
+ * The simulation stays in the ground plane (x, y); here that maps to
+ * three.js (x, z) with y as height. LoL units are used throughout, so the
+ * numbers in the drills and the numbers in the scene are the same numbers.
  */
 
 import * as THREE from "../../vendor/three.module.js";
@@ -21,9 +24,11 @@ function makeFloorTexture(worldW, worldH) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  // A worn lane running down the middle.
   ctx.fillStyle = "rgba(120,150,190,.045)";
   ctx.fillRect(0, canvas.height * 0.22, canvas.width, canvas.height * 0.56);
 
+  // Grid, one cell every 200 League units.
   ctx.strokeStyle = "rgba(130,170,220,.09)";
   ctx.lineWidth = 1;
   const cell = (200 / worldW) * canvas.width;
@@ -40,6 +45,7 @@ function makeFloorTexture(worldW, worldH) {
     ctx.stroke();
   }
 
+  // Speckle for texture.
   for (let i = 0; i < 2600; i++) {
     const x = Math.random() * canvas.width;
     const y = Math.random() * canvas.height;
@@ -57,7 +63,7 @@ export class Scene3D {
   constructor(container) {
     this.container = container;
 
-    // Create canvas explicitly - Three.js needs a clean canvas without prior 2D context
+    // Create canvas element for Three.js renderer
     const canvas = document.createElement("canvas");
     canvas.style.display = "block";
     canvas.style.width = "100%";
@@ -78,7 +84,7 @@ export class Scene3D {
     this.zoom = 1;
     this.cameraDistance = 850;
     this.cameraHeight = 800;
-    this.cameraPitch = 30;
+    this.cameraPitch = 30; // degrees
     this.focusTarget = new THREE.Vector3(0, 0, 0);
 
     const hemi = new THREE.HemisphereLight(0x8fb4e0, 0x1b2430, 0.85);
@@ -93,6 +99,7 @@ export class Scene3D {
     this.unitViews = new Map();
     this.shotViews = new Map();
     this.projectileViews = new Map();
+    this.powerupViews = new Map();
     this.markers = [];
     this.effects = [];
 
@@ -103,6 +110,7 @@ export class Scene3D {
     this.resize();
   }
 
+  /** Clears everything that belongs to a previous drill. */
   reset() {
     for (const [, view] of this.unitViews) this.scene.remove(view.model.root);
     this.unitViews.clear();
@@ -172,6 +180,7 @@ export class Scene3D {
     }
   }
 
+  /** Converts a client-space point into a point on the ground plane. */
   clientToGround(clientX, clientY) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -297,8 +306,8 @@ export class Scene3D {
       const safe = player.attackRange > enemy.attackRange + 40;
       const ring = this.ensureRing(`enemy-${enemy.id}`, safe ? 0x46d39a : 0xff5f6d, 0.16);
       ring.visible = true;
-      own.scale.setScalar(enemy.attackRange);
-      own.position.set(enemy.x, 3, enemy.y);
+      ring.scale.setScalar(enemy.attackRange);
+      ring.position.set(enemy.x, 3, enemy.y);
     }
   }
 
@@ -527,7 +536,11 @@ export class Scene3D {
       if (!seen.has(key)) {
         this.scene.remove(view.mesh, view.edge);
         view.mesh.geometry.dispose();
+        view.inner.geometry.dispose();
         view.mat.dispose();
+        view.innerMat.dispose();
+        view.iconSprite.material.map.dispose();
+        view.iconSprite.material.dispose();
         this.powerupViews.delete(key);
       }
     }
