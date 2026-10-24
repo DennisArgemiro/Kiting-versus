@@ -288,6 +288,28 @@ export class Scene3D {
     return ring;
   }
 
+  _makeNameSprite(text, color = "#ffffff") {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    ctx.font = '700 40px "Segoe UI", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.strokeStyle = "rgba(0,0,0,.85)";
+    ctx.lineWidth = 7;
+    ctx.strokeText(text, 128, 32);
+    ctx.fillStyle = color || "#e6ecf5";
+    ctx.fillText(text, 128, 32);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }),
+    );
+    sprite.scale.set(86, 22, 1);
+    return sprite;
+  }
+
   drawRanges(world, player, showRanges, attackMoveActive = false) {
     for (const ring of this.rings?.values() || []) ring.visible = false;
     if (!showRanges && !attackMoveActive) return;
