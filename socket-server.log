@@ -6,21 +6,60 @@ Error: listen EADDRINUSE: address already in use :::3002
     at Server.setupListenHandle [as _listen2] (node:net:2008:16)
     at listenIPlayer disconnected: 2CftNsIybo52yXxkAAAC
 Player connected: 6F5gWSZ4PIR9cIvdAAAD
-<anonymous> (/media/dennis/Ventoy/Kiting-Versus/skillgap-web/socket-server.cjs:99:12)
-    at Module._compile (node:internal/modules/cjs/loader:1829:14)
-    at Object..js (node:internal/modules/cjs/loader:1969:10)
-    at Module.load (node:internal/modules/cjs/loader:1552:32)
-    at Module._load (node:internal/modules/cjs/loader:1354:12)
-    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
-    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
-Emitted 'error' event on Server instance at:
-    at emitErrorNT (node:net:2044:8)
-    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
-  code: 'EADDRINUSE',
-  errno: -98,
-  syscall: 'listen',
-  address: '::',
-  port: 3002
-}
-
-Node.js v25.9.0
+Player disconnected: voC1vqPqWdKGMGpvAAAB
+Player connected: 0VMmoZBsi8OomxltAAAE
+Player disconnected: 0VMmoZBsi8OomxltAAAE
+Player connected: 6p368XZCDTqVl35eAAAF
+Player connected: oqo24xQ13hLsXIXMAAAG
+Player disconnected: 6p368XZCDTqVl35eAAAF
+Player connected: t-QdGR8-HXQNdisAAAAH
+Player disconnected: 6F5gWSZ4PIR9cIvdAAAD
+Player connected: gOXj8-inKOjxGo8JAAAI
+Player connected: Zbo5vsjE2egWkR1wAAAJ
+Player disconnected: t-QdGR8-HXQNdisAAAAH
+Player disconnected: Zbo5vsjE2egWkR1wAAAJ
+Player connected: XaT7U9WDgtNvJksnAAAK
+Player disconnected: XaT7U9WDgtNvJksnAAAK
+Player connected: AMfuF2KMpmJTPYWSAAAL
+Player disconnected: AMfuF2KMpmJTPYWSAAAL
+Player connected: Rys1KZvtYUvnnZdiAAAM
+Player disconnected: Rys1KZvtYUvnnZdiAAAM
+Player connected: nhQ51W2mX949_JzvAAAN
+Player disconnected: nhQ51W2mX949_JzvAAAN
+Player connected: PZhbjArevmo8RR3TAAAO
+Player disconnected: PZhbjArevmo8RR3TAAAO
+Player connected: HwaY08ddtCbF5vDBAAAP
+Player disconnected: HwaY08ddtCbF5vDBAAAP
+Player connected: _XGANwzk2IwrhSOdAAAQ
+Player disconnected: gOXj8-inKOjxGo8JAAAI
+Player connected: 83SKfn4k6IB364cXAAAR
+Player disconnected: _XGANwzk2IwrhSOdAAAQ
+Player connected: BJFQD4nZjMa97SUUAAAS
+Player disconnected: BJFQD4nZjMa97SUUAAAS
+Player connected: WWXcU71tixe6mvlqAAAT
+Player disconnected: WWXcU71tixe6mvlqAAAT
+Player connected: ElkwiSRY7_CqNJssAAAU
+Player disconnected: ElkwiSRY7_CqNJssAAAU
+Player connected: G-sASWwykK164m5fAAAV
+Player disconnected: G-sASWwykK164m5fAAAV
+Player disconnected: oqo24xQ13hLsXIXMAAAG
+Player connected: NhXRNXyYvBPELf-2AAAW
+Player disconnected: NhXRNXyYvBPELf-2AAAW
+Player connected: 8diGDnGSS7jIFhpmAAAX
+Player connected: lGeiyDHk76BZ1zJRAAAY
+Player disconnected: 8diGDnGSS7jIFhpmAAAX
+Player connected: DBhjR5du0PupS-xVAAAZ
+Player disconnected: DBhjR5du0PupS-xVAAAZ
+Player disconnected: lGeiyDHk76BZ1zJRAAAY
+Player connected: qXWPiUPz2kWNh-NLAAAa
+Player connected: _0qxozdgwTGptJniAAAb
+Player disconnected: qXWPiUPz2kWNh-NLAAAa
+Player disconnected: _0qxozdgwTGptJniAAAb
+Player connected: iLxzFExYt_FgSx-3AAAc
+Player connected: yjLSru_RVELx7LzoAAAd
+Player disconnected: 83SKfn4k6IB364cXAAAR
+Player connected: z_3daGJA2AKqFvqwAAAe
+Player disconnected: z_3daGJA2AKqFvqwAAAe
+Player connected: gIs1LdSaqQo5raY9AAAf
+Player disconnected: gIs1LdSaqQo5raY9AAAf
+Player connected: yDhvdvWjt4g0zyn_AAAg
