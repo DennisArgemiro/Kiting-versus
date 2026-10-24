@@ -1,0 +1,9 @@
+PowerUps podem surgir aleatoriamente na arena.
+
+PowerUps:
+Cura: restaura X quantidade de vida. Icone=Coração com um sinal de mais.
+Atk speed boost: Aumenta a atack speed em 20% durante 5 segundos.Icone: Arco com uma seta pra cima.
+Mov Speed boost: aumenta a mov speed por 5 segundos. Icone: Bota com uma seta pra cima.
+Vampirismo: Cada auto ataque recupera 20% do dano causado como vida. Icone: Espada com sangue na ponta.
+Atk speed nerf: Diminue a atack speed do oponete em 20% durante 5 segundos.Icone: Arco com uma seta pra Baixo.
+Mov Speed boost: Diminue a mov speed do oponente por 5 segundos. Icone: Bota com uma seta pra Baixo.

@@ -601,49 +601,49 @@ export class Scene3D {
         const group = new THREE.Group();
         
         // Core sphere
-        const coreGeo = new THREE.SphereGeometry(18, 24, 24);
+        const coreGeo = new THREE.SphereGeometry(30, 32, 32);
         const coreMat = new THREE.MeshBasicMaterial({
           color: pu.color,
           transparent: true,
-          opacity: 0.9,
+          opacity: 0.95,
         });
         const core = new THREE.Mesh(coreGeo, coreMat);
-        core.position.y = 22;
+        core.position.y = 35;
         group.add(core);
         
         // Outer ring
-        const ringGeo = new THREE.RingGeometry(22, 28, 32);
+        const ringGeo = new THREE.RingGeometry(35, 42, 48);
         const ringMat = new THREE.MeshBasicMaterial({
           color: pu.color,
           transparent: true,
-          opacity: 0.4,
+          opacity: 0.5,
           side: THREE.DoubleSide,
           depthWrite: false,
         });
         const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.rotation.x = -Math.PI / 2;
-        ring.position.y = 22;
+        ring.position.y = 35;
         group.add(ring);
         
         // Icon sprite
         const iconCanvas = document.createElement("canvas");
-        iconCanvas.width = 128;
-        iconCanvas.height = 128;
+        iconCanvas.width = 256;
+        iconCanvas.height = 256;
         const ictx = iconCanvas.getContext("2d");
-        ictx.font = "bold 80px Arial";
+        ictx.font = "bold 160px Arial";
         ictx.textAlign = "center";
         ictx.textBaseline = "middle";
         ictx.fillStyle = "#fff";
         ictx.shadowColor = "#000";
-        ictx.shadowBlur = 8;
-        ictx.fillText(pu.icon, 64, 72);
+        ictx.shadowBlur = 16;
+        ictx.fillText(pu.icon, 128, 144);
         const iconTexture = new THREE.CanvasTexture(iconCanvas);
         iconTexture.colorSpace = THREE.SRGBColorSpace;
         const iconSprite = new THREE.Sprite(
           new THREE.SpriteMaterial({ map: iconTexture, transparent: true, depthTest: false })
         );
-        iconSprite.scale.set(50, 50, 1);
-        iconSprite.position.y = 45;
+        iconSprite.scale.set(100, 100, 1);
+        iconSprite.position.y = 70;
         group.add(iconSprite);
         
         group.position.set(pu.x, 0, pu.y);

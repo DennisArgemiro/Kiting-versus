@@ -39,6 +39,7 @@ export class Unit {
     this.lastDamageAt = -99;
     this.hitFlash = 0;
     this.facing = { x: 1, y: 0 };
+    this.deadChecked = false;
   }
 
   get busy() {

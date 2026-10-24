@@ -410,6 +410,7 @@ export class ArenaMode {
   respawnPlayer(player) {
     player.hp = player.maxHp;
     player.alive = true;
+    player.deadChecked = false;
     player.x = player.respawnPos.x;
     player.y = player.respawnPos.y;
     player.attackTimer = 0;
@@ -473,115 +474,7 @@ export class ArenaMode {
   }
 }
 
-/** Create a second input handler for PvP (keyboard for P2) */
-export function createP2Input(canvas, world) {
-  const keys = new Set();
-  const pressed = new Set();
-  const mouse = { x: 0, y: 0 };
-  const clicks = [];
-  let enabled = true;
-  
-  const toWorld = (e) => world.toWorld(e.clientX, e.clientY);
-  
-  window.addEventListener('keydown', (e) => {
-    if (!enabled) return;
-    const code = e.code;
-    if (!keys.has(code)) pressed.add(code);
-    keys.add(code);
-    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyR', 'KeyF', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Space', 'ShiftLeft', 'ShiftRight'].includes(code)) {
-      e.preventDefault();
-    }
-  });
-  
-  window.addEventListener('keyup', (e) => {
-    keys.delete(e.code);
-  });
-  
-  window.addEventListener('blur', () => {
-    keys.clear();
-    pressed.clear();
-  });
-  
-  canvas.addEventListener('mousemove', (e) => {
-    const p = toWorld(e);
-    mouse.x = p.x;
-    mouse.y = p.y;
-  });
-  
-  canvas.addEventListener('mousedown', (e) => {
-    if (!enabled) return;
-    const p = toWorld(e);
-    mouse.x = p.x;
-    mouse.y = p.y;
-    clicks.push({ button: e.button, x: p.x, y: p.y });
-    e.preventDefault();
-  });
-  
-  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-  
-  return {
-    keys,
-    pressed,
-    mouse,
-    clicks,
-    enabled,
-    down: (...codes) => codes.some(c => keys.has(c)),
-    hit: (...codes) => {
-      for (const code of codes) {
-        if (pressed.has(code)) {
-          pressed.delete(code);
-          return true;
-        }
-      }
-      return false;
-    },
-    takeClicks: () => {
-      const out = clicks.slice();
-      clicks.length = 0;
-      return out;
-    },
-    get attackMoveActive() { return keys.has('ShiftLeft') || keys.has('ShiftRight'); },
-    endFrame: () => { pressed.clear(); clicks.length = 0; },
-    reset: () => { keys.clear(); pressed.clear(); clicks.length = 0; }
-  };
-}
-
-/** Apply keyboard-based input for P2 in PvP mode */
-export function applyP2Input(player, input, world) {
-  const controller = player.controller;
-  
-  // Movement: WASD
-  let moveX = 0, moveY = 0;
-  if (input.down('KeyW')) moveY -= 1;
-  if (input.down('KeyS')) moveY += 1;
-  if (input.down('KeyA')) moveX -= 1;
-  if (input.down('KeyD')) moveX += 1;
-  
-  const attackMove = input.attackMoveActive;
-  
-  if (moveX !== 0 || moveY !== 0) {
-    const len = Math.hypot(moveX, moveY);
-    moveX /= len;
-    moveY /= len;
-    if (attackMove) {
-      controller.attackMoveTo(player.x + moveX * 800, player.y + moveY * 800);
-    } else {
-      controller.moveTo(player.x + moveX * 800, player.y + moveY * 800);
-    }
-  }
-  
-  // Stop: Space
-  if (input.hit('Space')) {
-    controller.stop();
-  }
-  
-  // Abilities: 1,2,3,4 -> Q,W,E,R
-  const slotMap = { 'Digit1': 'Q', 'Digit2': 'W', 'Digit3': 'E', 'Digit4': 'R' };
-  for (const [key, slot] of Object.entries(slotMap)) {
-    if (input.hit(key)) {
-      castAbility(player, slot, input.mouse.x, input.mouse.y, world);
-    }
-  }
-  
-  controller.update(0, world);
-}
+/** 
+ * Input for P2 is handled externally via Socket.io in online mode.
+ * No local multiplayer (WASD) is supported - only online via Socket.io.
+ */

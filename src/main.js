@@ -8,7 +8,7 @@ import { formatTime, makeRng } from "./core/math.js";
 import { config, applyChampionOverrides, applyDrillOverrides } from "./config.js";
 import { syncArena, ARENA } from "./drills/common.js";
 import { createAdmin } from "./admin.js";
-import { ArenaMode, createP2Input, applyP2Input, POWERUP_TYPES } from "./arena.js";
+import { ArenaMode, POWERUP_TYPES } from "./arena.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -28,8 +28,251 @@ const app = {
   config,
   // Arena
   arenaSession: null,
-  arenaInput2: null,
+  // Online multiplayer
+  socket: null,
+  onlineRoom: null,      // { roomCode, role: 'p1'|'p2' }
+  onlineOpponent: null,  // { x, y, hp, maxHp, alive, order, alias }
+  onlineConnected: false,
+  onlineLobbyActive: false,
+  onlineLobbyTimer: 0,
 };
+
+// ────────────────────────────── Online Multiplayer (Socket.io) ──────────────────────────────
+
+const SOCKET_URL = 'http://localhost:3002'; // Change to server IP for online play
+
+function initSocket() {
+  if (!window.io) {
+    console.warn('Socket.io client not loaded');
+    return;
+  }
+  app.socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
+
+  app.socket.on('connect', () => {
+    app.onlineConnected = true;
+    console.log('Connected to online server:', app.socket.id);
+  });
+
+  app.socket.on('disconnect', () => {
+    app.onlineConnected = false;
+    if (app.onlineLobbyActive) {
+      showScreen('arena-setup');
+      app.onlineLobbyActive = false;
+    }
+    if (app.arenaSession) {
+      abortArena();
+    }
+  });
+
+  app.socket.on('room-created', ({ roomCode, role, champion }) => {
+    app.onlineRoom = { roomCode, role };
+    app.onlineLobbyActive = true;
+    app.onlineLobbyTimer = 10;
+    showScreen('arena-lobby');
+    updateLobbyUI();
+    startLobbyCountdown();
+  });
+
+  app.socket.on('room-joined', ({ roomCode, role, champion }) => {
+    app.onlineRoom = { roomCode, role };
+    app.onlineLobbyActive = true;
+    app.onlineLobbyTimer = 10;
+    showScreen('arena-lobby');
+    updateLobbyUI();
+    startLobbyCountdown();
+  });
+
+  app.socket.on('room-full', ({ roomCode }) => {
+    app.onlineLobbyTimer = 10;
+    showScreen("arena-lobby");
+    updateLobbyUI();
+    startLobbyCountdown();
+  });
+
+  app.socket.on('room-error', ({ message }) => {
+    alert(message);
+  });
+
+  app.socket.on('opponent-input', ({ role, input, timestamp }) => {
+    if (!app.arenaSession || !app.arenaSession.arena) return;
+    applyOpponentInput(role, input);
+  });
+
+  app.socket.on('opponent-disconnected', () => {
+    alert('Oponente desconectou');
+    abortArena();
+    showScreen('arena-setup');
+  });
+}
+
+function startLobbyCountdown() {
+  const timer = setInterval(() => {
+    app.onlineLobbyTimer--;
+    updateLobbyUI();
+    if (app.onlineLobbyTimer <= 0) {
+      clearInterval(timer);
+      app.onlineLobbyActive = false;
+      startOnlineMatch();
+    }
+  }, 1000);
+  app.onlineLobbyTimerInterval = timer;
+}
+
+function updateLobbyUI() {
+  const timerEl = document.getElementById('lobby-timer');
+  const statusEl = document.getElementById('lobby-status');
+  const p1El = document.getElementById('lobby-p1');
+  const p2El = document.getElementById('lobby-p2');
+  if (!timerEl || !statusEl) return;
+
+  timerEl.textContent = app.onlineLobbyTimer;
+  statusEl.textContent = app.onlineLobbyTimer > 0 ? 'Adversário encontrado! Iniciando em...' : 'Iniciando partida...';
+
+  if (p1El) {
+    p1El.querySelector('.name').textContent = app.onlineRoom.role === 'p1' ? 'Você' : 'Oponente';
+    p1El.querySelector('.ready').textContent = 'Pronto';
+  }
+  if (p2El) {
+    p2El.querySelector('.name').textContent = app.onlineRoom.role === 'p2' ? 'Você' : 'Oponente';
+    p2El.querySelector('.ready').textContent = 'Pronto';
+  }
+}
+
+function startOnlineMatch() {
+  app.onlineLobbyActive = false;
+  if (app.onlineLobbyTimerInterval) {
+    clearInterval(app.onlineLobbyTimerInterval);
+  }
+
+  const champion1 = app.champions.find(c => c.alias === $("#arena-p1-champion").value) || app.champions[0];
+  const champion2 = app.champions.find(c => c.alias === $("#arena-p2-champion").value) || app.champions[1];
+
+  const rng = makeRng((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0);
+  const arenaStage = $("#arena-game-stage");
+  if (!app.arenaScene) {
+    app.arenaScene = new Scene3D(arenaStage);
+    app.arenaInput = new Input(app.arenaScene.renderer.domElement, {
+      toWorld: (x, y) => app.arenaScene.clientToGround(x, y),
+    }, config.combat().cameraLocked);
+  }
+  const scene = app.arenaScene;
+  const input1 = app.arenaInput;
+  input1._cameraLocked = config.combat().cameraLocked;
+  scene.setCameraConfig({ ...config.camera(), pitch: config.combat().cameraPitch });
+  scene.reset();
+  scene.resize();
+  scene.setArena(ARENA);
+  input1.reset();
+
+  const isBot = false; // Online is always PvP
+  const arena = new ArenaMode({
+    champion1,
+    champion2,
+    isBot,
+    botDifficulty: 'normal',
+    powerupsEnabled: $("#arena-powerups-enabled").checked,
+    rng,
+    onMoveMarker: (x, y, color) => scene.showMoveMarker(x, y, color),
+  });
+
+  arena.showBanner = function(text, tone) {
+    const el = $("#arena-banner");
+    el.textContent = text;
+    el.className = "banner is-on " + tone;
+    clearTimeout(arena.showBanner._timer);
+    arena.showBanner._timer = setTimeout(() => {
+      el.className = "banner " + tone;
+    }, 2000);
+  };
+
+  const loop = new Loop(
+    function(dt) {
+      // Send player input to server
+      if (app.socket && app.socket.connected && app.onlineRoom) {
+        const player = arena.player1;
+        app.socket.emit('player-input', {
+          roomCode: app.onlineRoom.roomCode,
+          role: app.onlineRoom.role,
+          input: {
+            x: player.x,
+            y: player.y,
+            orderKind: player.controller.order.kind,
+            orderPoint: player.controller.order.point,
+            orderTarget: player.controller.order.target,
+            attackTimer: player.attackTimer,
+            casting: player.casting,
+          },
+          hp: player.hp,
+          maxHp: player.maxHp,
+          alive: player.alive,
+          timestamp: Date.now(),
+        });
+      }
+
+      arena.update(dt, input1, null);
+
+      if (arena.finished && app.arenaSession && !app.arenaSession.ending) {
+        app.arenaSession.ending = true;
+        finishArena();
+      }
+    },
+    function() {
+      const now = performance.now();
+      lastDelta = Math.min(0.1, (now - lastFrame) / 1000);
+      lastFrame = now;
+      const combat = config.combat();
+      const edgeScroll = combat.cameraLocked ? null : input1.getEdgeScroll();
+      arena.render(scene, {
+        showRanges: combat.showRanges,
+        dt: lastDelta,
+        attackMoveActive: input1.attackMoveActive,
+        focusTarget: arena.player1.controller.target,
+        powerups: arena.powerups,
+      });
+      scene.updateCamera(arena.player1, lastDelta, edgeScroll);
+      updateArenaHud(arena, input1);
+      $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
+      input1.endFrame();
+    }
+  );
+
+  app.arenaSession = { arena, scene, input1, input2: null, loop, ending: false };
+  lastFrame = performance.now();
+  renderAbilitiesHud(arena.player1, "#arena-hud-abilities");
+  showScreen("arena");
+  requestAnimationFrame(() => {
+    scene.resize();
+    scene.setArena(ARENA);
+    loop.start();
+  });
+}
+
+function applyOpponentInput(role, input) {
+  if (!app.arenaSession || !app.arenaSession.arena) return;
+  const arena = app.arenaSession.arena;
+  const opponent = role === 'p1' ? arena.player2 : arena.player1;
+  if (!opponent || !opponent.alive) return;
+
+  // Apply opponent state
+  opponent.x = input.x;
+  opponent.y = input.y;
+  opponent.hp = input.hp;
+  opponent.alive = input.alive;
+
+  // Apply order
+  if (input.orderKind === 'move' && input.orderPoint) {
+    opponent.controller.moveTo(input.orderPoint.x, input.orderPoint.y);
+  } else if (input.orderKind === 'attack' && input.orderTarget) {
+    opponent.controller.order = { kind: 'attack', target: opponent };
+  } else if (input.orderKind === 'attackMove' && input.orderPoint) {
+    opponent.controller.attackMoveTo(input.orderPoint.x, input.orderPoint.y);
+  } else if (input.orderKind === 'stop') {
+    opponent.controller.stop();
+  }
+
+  opponent.attackTimer = input.attackTimer;
+  opponent.casting = input.casting;
+}
 
 // ────────────────────────────── boot ──────────────────────────────
 
@@ -60,6 +303,7 @@ async function boot() {
   renderMenu();
   bindGlobalEvents();
   bindArenaEvents();
+  initSocket();
 
   app.admin = createAdmin({ app, onApply: applyConfig });
 }
@@ -664,13 +908,28 @@ function bindArenaEvents() {
   const startBotBtn = $("#arena-start-bot");
   if (startBotBtn) startBotBtn.addEventListener("click", () => startArena({ isBot: true, mode: 'bot' }));
   
-  // Start PvP Local
-  const startPvpBtn = $("#arena-start-pvp");
-  if (startPvpBtn) startPvpBtn.addEventListener("click", () => startArena({ isBot: false, mode: 'local' }));
-  
-  // Start PvP Online (if button exists)
+  // Start PvP Online
   const startOnlineBtn = $("#arena-start-online");
-  if (startOnlineBtn) startOnlineBtn.addEventListener("click", () => startArena({ isBot: false, mode: 'online' }));
+  if (startOnlineBtn) startOnlineBtn.addEventListener("click", () => {
+    const mode = $("#arena-online-mode").value;
+    if (mode === 'host') {
+      app.socket.emit('create-room', { champion: $("#arena-p1-champion").value });
+    } else {
+      const roomCode = $("#arena-room-code").value.toUpperCase();
+      if (!roomCode) {
+        alert('Informe o código da sala');
+        return;
+      }
+      app.socket.emit('join-room', { roomCode, champion: $("#arena-p1-champion").value });
+    }
+  });
+  
+  // Room mode change - show/hide room code input
+  const modeSel = $("#arena-online-mode");
+  if (modeSel) modeSel.addEventListener("change", () => {
+    const roomField = $("#arena-room-field");
+    if (roomField) roomField.style.display = modeSel.value === 'client' ? 'block' : 'none';
+  });
   
   // Arena exit
   const exitBtn = $("#arena-exit");
@@ -690,7 +949,9 @@ function bindArenaEvents() {
     renderMenu();
     showScreen("menu");
   });
-}function renderArenaSetup() {
+}
+
+function renderArenaSetup() {
   // Get main menu's selected champion
   const mainChampion = store.champion();
   
@@ -764,15 +1025,6 @@ function startArena(opts) {
   scene.setArena(ARENA);
   input1.reset();
   
-  // Create second input for PvP
-  let input2 = null;
-  if (!isBot) {
-    input2 = createP2Input(scene.renderer.domElement, {
-      toWorld: (x, y) => scene.clientToGround(x, y)
-    });
-    app.arenaInput2 = input2;
-  }
-  
   const arena = new ArenaMode({
     champion1,
     champion2,
@@ -780,7 +1032,7 @@ function startArena(opts) {
     botDifficulty,
     powerupsEnabled,
     rng,
-    onMoveMarker: (x, y, color) => scene.showMoveMarker(x, y, color)
+    onMoveMarker: (x, y, color) => scene.showMoveMarker(x, y, color),
   });
   
   // Override showBanner for powerup messages
@@ -807,7 +1059,30 @@ function startArena(opts) {
   
   const loop = new Loop(
     function(dt) {
-      arena.update(dt, input1, input2);
+      // Online: send player input to server
+      if (app.socket && app.socket.connected && app.onlineRoom && !isBot) {
+        const player = arena.player1;
+        app.socket.emit('player-input', {
+          roomCode: app.onlineRoom.roomCode,
+          role: app.onlineRoom.role,
+          input: {
+            x: player.x,
+            y: player.y,
+            orderKind: player.controller.order.kind,
+            orderPoint: player.controller.order.point,
+            orderTarget: player.controller.order.target ? 'unit' : null,
+            attackTimer: player.attackTimer,
+            casting: player.casting,
+          },
+          hp: player.hp,
+          maxHp: player.maxHp,
+          alive: player.alive,
+          timestamp: Date.now(),
+        });
+      }
+      
+      arena.update(dt, input1, null);
+      
       if (arena.finished && app.arenaSession && !app.arenaSession.ending) {
         app.arenaSession.ending = true;
         finishArena();
@@ -819,27 +1094,24 @@ function startArena(opts) {
       lastFrame = now;
       const combat = config.combat();
       const edgeScroll = combat.cameraLocked ? null : input1.getEdgeScroll();
-      // P2 input handling
-      if (input2 && !arena.isBot) {
-        applyP2Input(arena.player2, input2, arena.world);
-      }
       
       arena.render(scene, { 
         showRanges: combat.showRanges, 
         dt: lastDelta, 
         attackMoveActive: input1.attackMoveActive,
         focusTarget: arena.player1.controller.target,
-        powerups: arena.powerups
+        powerups: arena.powerups,
+        // Render opponent from online input
+        opponent: app.onlineOpponent,
       });
       scene.updateCamera(arena.player1, lastDelta, edgeScroll);
       updateArenaHud(arena, input1);
       $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
       input1.endFrame();
-      if (input2) input2.endFrame();
     }
   );
   
-  app.arenaSession = { arena, scene, input1, input2, loop, ending: false };
+  app.arenaSession = { arena, scene, input1, input2: null, loop, ending: false };
   lastFrame = performance.now();
   
   // Populate abilities HUD for P1
@@ -854,47 +1126,18 @@ function startArena(opts) {
 }
 
 function startOnlineLobby(opts) {
-  // For now, simulate online matchmaking with a 10s countdown
-  // In production, this would connect to a matchmaking server
-  showScreen("arena-lobby");
+  const mode = $("#arena-online-mode").value;
   
-  const champion1 = app.champions.find(c => c.alias === $("#arena-p1-champion").value) || app.champions[0];
-  const champion2 = app.champions.find(c => c.alias === $("#arena-p2-champion").value) || app.champions[1];
-  
-  // Update lobby UI
-  $("#lobby-p1 .name").textContent = champion1.name;
-  $("#lobby-p1 .avatar").textContent = getChampionEmoji(champion1.alias);
-  $("#lobby-p1 .ready").textContent = "Pronto";
-  
-  // Simulate opponent joining after 2 seconds
-  setTimeout(() => {
-    $("#lobby-p2 .name").textContent = champion2.name;
-    $("#lobby-p2 .avatar").textContent = getChampionEmoji(champion2.alias);
-    $("#lobby-p2 .ready").textContent = "Pronto";
-  }, 2000);
-  
-  let countdown = 10;
-  $("#lobby-timer").textContent = countdown;
-  $("#lobby-status").textContent = "Adversário encontrado! Iniciando em...";
-  
-  const timer = setInterval(() => {
-    countdown--;
-    $("#lobby-timer").textContent = countdown;
-    if (countdown <= 0) {
-      clearInterval(timer);
-      // Start the actual match
-      startArena({ ...opts, isBot: false, mode: 'local' });
+  if (mode === 'host') {
+    app.socket.emit('create-room', { champion: $("#arena-p1-champion").value });
+  } else {
+    const roomCode = $("#arena-room-code").value.toUpperCase();
+    if (!roomCode) {
+      alert('Informe o código da sala');
+      return;
     }
-  }, 1000);
-  
-  // Allow canceling
-  const cancelFn = () => {
-    clearInterval(timer);
-    window.removeEventListener("keydown", cancelFn);
-    renderMenu();
-    showScreen("menu");
-  };
-  window.addEventListener("keydown", cancelFn);
+    app.socket.emit('join-room', { roomCode, champion: $("#arena-p1-champion").value });
+  }
 }
 
 function getChampionEmoji(alias) {
@@ -1021,6 +1264,7 @@ function updatePowerupHud(arena, playerId, containerSelector) {
   container.innerHTML = powerups.map(function(p) {
     const progress = (p.timer / p.maxTimer) * 360;
     return '<div class="powerup-hud-item" style="--powerup-color: ' + p.color + '; --progress: ' + progress + 'deg;">' +
+      '<span class="icon">' + p.icon + '</span>' +
       '<div class="cooldown-ring"></div>' +
       '<span class="timer-text">' + Math.ceil(p.timer) + 's</span>' +
     '</div>';
