@@ -150,10 +150,18 @@ export class ArenaMode {
       if (unit.team === 'p1') {
         this.p2Score++;
         this.checkWin();
+        // Killer heals 50% of max HP
+        if (killer && typeof killer === 'object') {
+          killer.hp = Math.min(killer.maxHp, killer.hp + killer.maxHp * 0.5);
+        }
         this.scheduleRespawn(this.player1, killer);
       } else if (unit.team === 'p2') {
         this.p1Score++;
         this.checkWin();
+        // Killer heals 50% of max HP
+        if (killer && typeof killer === 'object') {
+          killer.hp = Math.min(killer.maxHp, killer.hp + killer.maxHp * 0.5);
+        }
         this.scheduleRespawn(this.player2, killer);
       }
     };
@@ -172,6 +180,7 @@ export class ArenaMode {
   scheduleRespawn(player, killer) {
     player.respawnAt = this.world.time + 4;
     player.respawnPos = { x: player.team === 'p1' ? ARENA.w * 0.25 : ARENA.w * 0.75, y: ARENA.h * 0.5 };
+    player.invulnerableUntil = this.world.time + 9; // 4s respawn + 5s invulnerability
     if (killer && typeof killer === 'object' && killer.killStreak !== undefined) {
       killer.killStreak = (killer.killStreak || 0) + 1;
     }

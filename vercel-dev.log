@@ -1,0 +1,15 @@
+WARNING! Running dev server in local mode without a project setup:
+  - Environment variables will not be pulled from Vercel
+  - Project settings are defined by local configuration
+
+To link your project, run `vercel dev` without `-L` or `--local` or `vercel link`.
+> NOTE: Requested port 3000 is already in use
+> NOTE: Requested port 3001 is already in use
+> NOTE: Requested port 3002 is already in use
+> Running Dev Command “node server.mjs”
+
+  SkillGap Web rodando em http://localhost:3003
+
+  Pressione Ctrl+C para encerrar.
+
+> Ready! Available at http://localhost:3003

@@ -176,27 +176,16 @@
         <div class="arena-divider">ou</div>
         <div class="arena-option">
           <h3>Jogador vs Jogador (Online)</h3>
-          <p>Jogue contra outro jogador na mesma rede via WebSocket.</p>
-          <div class="field">
-            <span>Modo</span>
-            <select id="arena-online-mode">
-              <option value="host">Criar Sala (Host)</option>
-              <option value="client">Entrar na Sala</option>
-            </select>
-          </div>
-          <div class="field" id="arena-room-field" style="display:none">
-            <span>Código da Sala</span>
-            <input type="text" id="arena-room-code" placeholder="Ex: ABC123" maxlength="6" />
-          </div>
+          <p>Escolha seu campeão e entre na fila para enfrentar outro jogador online.</p>
           <div class="field">
             <span>Seu Campeão</span>
             <select id="arena-p1-champion"></select>
           </div>
-          <div class="field">
-            <span>Campeão do Oponente</span>
-            <select id="arena-p2-champion"></select>
+          <button id="arena-start-online" class="btn btn-primary" type="button">Entrar na Fila Online</button>
+          <div class="field" style="margin-top:12px; font-size:12px; color:var(--muted);">
+            Aguardando outro jogador conectar...
           </div>
-          <button id="arena-start-online" class="btn btn-primary" type="button">Iniciar Online</button>
+        </div>
         </div>
         <div class="arena-powerups-toggle">
           <label class="checkbox-wrap">

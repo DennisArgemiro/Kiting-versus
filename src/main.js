@@ -67,7 +67,7 @@ function initSocket() {
   app.socket.on('room-created', ({ roomCode, role, champion }) => {
     app.onlineRoom = { roomCode, role };
     app.onlineLobbyActive = true;
-    app.onlineLobbyTimer = 10;
+    app.onlineLobbyTimer = 5;
     showScreen('arena-lobby');
     updateLobbyUI();
     startLobbyCountdown();
@@ -76,15 +76,23 @@ function initSocket() {
   app.socket.on('room-joined', ({ roomCode, role, champion }) => {
     app.onlineRoom = { roomCode, role };
     app.onlineLobbyActive = true;
-    app.onlineLobbyTimer = 10;
+    app.onlineLobbyTimer = 5;
+    showScreen('arena-lobby');
+    updateLobbyUI();
+    startLobbyCountdown();
+  });
+
+  app.socket.on('match-found', ({ roomCode, role, opponentChampion }) => {
+    app.onlineRoom = { roomCode, role };
+    app.onlineLobbyActive = true;
+    app.onlineLobbyTimer = 5;
     showScreen('arena-lobby');
     updateLobbyUI();
     startLobbyCountdown();
   });
 
   app.socket.on('room-full', ({ roomCode }) => {
-    app.onlineLobbyTimer = 10;
-    showScreen("arena-lobby");
+    app.onlineLobbyTimer = 5;
     updateLobbyUI();
     startLobbyCountdown();
   });
@@ -145,7 +153,7 @@ function startOnlineMatch() {
   }
 
   const champion1 = app.champions.find(c => c.alias === $("#arena-p1-champion").value) || app.champions[0];
-  const champion2 = app.champions.find(c => c.alias === $("#arena-p2-champion").value) || app.champions[1];
+  const champion2 = app.champions.find(c => c.alias === ($("#arena-bot-champion") ? $("#arena-bot-champion").value : app.champions[1]?.alias)) || app.champions[1];
 
   const rng = makeRng((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0);
   const arenaStage = $("#arena-game-stage");
@@ -911,24 +919,7 @@ function bindArenaEvents() {
   // Start PvP Online
   const startOnlineBtn = $("#arena-start-online");
   if (startOnlineBtn) startOnlineBtn.addEventListener("click", () => {
-    const mode = $("#arena-online-mode").value;
-    if (mode === 'host') {
-      app.socket.emit('create-room', { champion: $("#arena-p1-champion").value });
-    } else {
-      const roomCode = $("#arena-room-code").value.toUpperCase();
-      if (!roomCode) {
-        alert('Informe o código da sala');
-        return;
-      }
-      app.socket.emit('join-room', { roomCode, champion: $("#arena-p1-champion").value });
-    }
-  });
-  
-  // Room mode change - show/hide room code input
-  const modeSel = $("#arena-online-mode");
-  if (modeSel) modeSel.addEventListener("change", () => {
-    const roomField = $("#arena-room-field");
-    if (roomField) roomField.style.display = modeSel.value === 'client' ? 'block' : 'none';
+    app.socket.emit('find-match', { champion: $("#arena-p1-champion").value });
   });
   
   // Arena exit
@@ -966,24 +957,17 @@ function renderArenaSetup() {
   }
   botSelect.value = app.champions[1]?.alias || app.champions[0].alias;
   
-  // Populate PvP champion selects
+  // Populate P1 champion select
   const p1Select = $("#arena-p1-champion");
-  const p2Select = $("#arena-p2-champion");
   p1Select.innerHTML = "";
-  p2Select.innerHTML = "";
   for (const champion of app.champions) {
     const o1 = document.createElement("option");
     o1.value = champion.alias;
     o1.textContent = champion.name;
     p1Select.appendChild(o1);
-    const o2 = document.createElement("option");
-    o2.value = champion.alias;
-    o2.textContent = champion.name;
-    p2Select.appendChild(o2);
   }
   // P1 uses main menu's selected champion
   p1Select.value = mainChampion;
-  p2Select.value = app.champions[1]?.alias || "";
 }
 
 function startArena(opts) {
@@ -1002,7 +986,8 @@ function startArena(opts) {
   if (isBot) {
     champion2 = app.champions.find(c => c.alias === $("#arena-bot-champion").value) || app.champions[1];
   } else {
-    champion2 = app.champions.find(c => c.alias === $("#arena-p2-champion").value) || app.champions[1];
+    // Local PvP removed - only online via Socket.io
+    champion2 = app.champions[1];
   }
   
   const botDifficulty = $("#arena-bot-difficulty").value;
@@ -1126,18 +1111,8 @@ function startArena(opts) {
 }
 
 function startOnlineLobby(opts) {
-  const mode = $("#arena-online-mode").value;
-  
-  if (mode === 'host') {
-    app.socket.emit('create-room', { champion: $("#arena-p1-champion").value });
-  } else {
-    const roomCode = $("#arena-room-code").value.toUpperCase();
-    if (!roomCode) {
-      alert('Informe o código da sala');
-      return;
-    }
-    app.socket.emit('join-room', { roomCode, champion: $("#arena-p1-champion").value });
-  }
+  // Queue for online matchmaking - Socket.io will match players automatically
+  app.socket.emit('find-match', { champion: $("#arena-p1-champion").value });
 }
 
 function getChampionEmoji(alias) {

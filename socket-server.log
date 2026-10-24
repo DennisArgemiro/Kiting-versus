@@ -1,2 +1,26 @@
-SkillGap Arena Server listening on port 3002
-Player connected: xCplXDXDYrlSqgddAAAA
+node:events:487
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: listen EADDRINUSE: address already in use :::3002
+    at Server.setupListenHandle [as _listen2] (node:net:2008:16)
+    at listenIPlayer disconnected: 2CftNsIybo52yXxkAAAC
+Player connected: 6F5gWSZ4PIR9cIvdAAAD
+<anonymous> (/media/dennis/Ventoy/Kiting-Versus/skillgap-web/socket-server.cjs:99:12)
+    at Module._compile (node:internal/modules/cjs/loader:1829:14)
+    at Object..js (node:internal/modules/cjs/loader:1969:10)
+    at Module.load (node:internal/modules/cjs/loader:1552:32)
+    at Module._load (node:internal/modules/cjs/loader:1354:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+Emitted 'error' event on Server instance at:
+    at emitErrorNT (node:net:2044:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  code: 'EADDRINUSE',
+  errno: -98,
+  syscall: 'listen',
+  address: '::',
+  port: 3002
+}
+
+Node.js v25.9.0

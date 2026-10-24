@@ -40,6 +40,7 @@ export class Unit {
     this.hitFlash = 0;
     this.facing = { x: 1, y: 0 };
     this.deadChecked = false;
+    this.invulnerableUntil = 0; // timestamp until which unit is invulnerable
   }
 
   get busy() {
@@ -81,6 +82,7 @@ export class Unit {
    * (the caller resolves damage and spawns projectiles).
    */
   tickTimers(dt) {
+    if (!this.alive) return null;
     let resolved = null;
     if (this.attackTimer > 0) this.attackTimer = Math.max(0, this.attackTimer - dt);
     if (this.casting > 0) {
@@ -129,6 +131,7 @@ export class Unit {
   }
 
   takeDamage(amount, now) {
+    if (now < this.invulnerableUntil) return this.hp;
     this.hp = Math.max(0, this.hp - amount);
     this.hitFlash = 0.18;
     this.lastDamageAt = now;

@@ -258,7 +258,7 @@ export function updateEnemy(enemy, world, player, dt, options = {}) {
   // Casters are driven by the drill itself (they cast, they do not swing).
   if (behaviour === "caster") return;
 
-  if (enemy.attackRange > 0 && toPlayer <= enemy.attackRange && enemy.canAttack()) {
+  if (enemy.attackRange > 0 && toPlayer <= enemy.attackRange * 0.98 && enemy.canAttack()) {
     enemy.startAttack(player);
   }
 }

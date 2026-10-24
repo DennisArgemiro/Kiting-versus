@@ -1,7 +1,6 @@
 /**
  * SkillGap Arena - Socket.io Server
- * Run with: node socket-server.js
- * Then access from browser: http://<server-ip>:3001
+ * Run with: node socket-server.cjs
  */
 
 const { createServer } = require('http');
@@ -17,48 +16,47 @@ const io = new Server(httpServer, {
 
 const PORT = process.env.PORT || 3002;
 
+// Matchmaking queue
+const matchQueue = []; // { socketId, champion, joinedAt }
+
 // Room state: rooms[roomCode] = { players: { p1: socketId, p2: socketId }, state: {} }
 const rooms = {};
 const socketToRoom = {};
 
+function matchPlayers() {
+  if (matchQueue.length < 2) return;
+  const p1 = matchQueue.shift();
+  const p2 = matchQueue.shift();
+  const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  rooms[roomCode] = {
+    players: { p1: p1.socketId, p2: p2.socketId },
+    state: {},
+    createdAt: Date.now(),
+  };
+  socketToRoom[p1.socketId] = { roomCode, role: 'p1' };
+  socketToRoom[p2.socketId] = { roomCode, role: 'p2' };
+  p1.socketId.join(roomCode);
+  p2.socketId.join(roomCode);
+  console.log('Match found:', roomCode, p1.socketId, 'vs', p2.socketId);
+  io.to(p1.socketId).emit('match-found', { roomCode, role: 'p1', opponentChampion: p2.champion });
+  io.to(p2.socketId).emit('match-found', { roomCode, role: 'p2', opponentChampion: p1.champion });
+}
+
 io.on('connection', (socket) => {
   console.log('Player connected:', socket.id);
 
-  socket.on('create-room', ({ champion, playerName }) => {
-    const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    rooms[roomCode] = {
-      players: { p1: socket.id },
-      state: {},
-      createdAt: Date.now(),
-    };
-    socketToRoom[socket.id] = { roomCode, role: 'p1' };
-    socket.join(roomCode);
-    console.log('Room created:', roomCode, 'by', socket.id);
-    socket.emit('room-created', { roomCode, role: 'p1', champion });
-  });
-
-  socket.on('join-room', ({ roomCode, champion, playerName }) => {
-    const room = rooms[roomCode];
-    if (!room) {
-      socket.emit('room-error', { message: 'Sala não encontrada' });
-      return;
-    }
-    if (room.players.p2) {
-      socket.emit('room-error', { message: 'Sala já está cheia' });
-      return;
-    }
-    room.players.p2 = socket.id;
-    socketToRoom[socket.id] = { roomCode, role: 'p2' };
-    socket.join(roomCode);
-    console.log('Player joined room:', roomCode, 'as p2');
-    socket.emit('room-joined', { roomCode, role: 'p2', champion });
-    io.to(roomCode).emit('room-full', { roomCode });
+  socket.on('find-match', ({ champion }) => {
+    // Remove any existing queue entry for this socket
+    const idx = matchQueue.findIndex(q => q.socketId === socket.id);
+    if (idx >= 0) matchQueue.splice(idx, 1);
+    matchQueue.push({ socketId: socket.id, champion, joinedAt: Date.now() });
+    console.log('Player queued:', socket.id, 'champion:', champion, 'queue size:', matchQueue.length);
+    matchPlayers();
   });
 
   socket.on('player-input', ({ roomCode, role, input, timestamp }) => {
     const room = rooms[roomCode];
     if (!room) return;
-    // Relay input to the other player
     const otherRole = role === 'p1' ? 'p2' : 'p1';
     const otherSocketId = room.players[otherRole];
     if (otherSocketId) {
@@ -77,6 +75,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    // Remove from queue
+    const idx = matchQueue.findIndex(q => q.socketId === socket.id);
+    if (idx >= 0) matchQueue.splice(idx, 1);
+    
     const info = socketToRoom[socket.id];
     if (info) {
       const room = rooms[info.roomCode];
