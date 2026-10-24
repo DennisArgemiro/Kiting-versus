@@ -114,7 +114,13 @@ export class Scene3D {
     canvas.style.height = '100%';
     container.appendChild(canvas);
 
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+    // Get WebGL context immediately to avoid conflicts
+    const gl = canvas.getContext('webgl', { antialias: true, alpha: false });
+    if (!gl) {
+      console.error('[Scene3D] WebGL context not available!');
+    }
+
+    this.renderer = new THREE.WebGLRenderer({ canvas, context: gl, antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setClearColor(0x070a0e, 1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
