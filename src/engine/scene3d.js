@@ -1,13 +1,10 @@
-import * as THREE from "../../vendor/three.module.js";
-import { buildChampionModel, animateModel } from "./models.js";
-
 /**
  * The 3D presentation layer.
- *
- * The simulation stays in the ground plane (x, y); here that maps to
- * three.js (x, z) with y as height. LoL units are used throughout, so the
- * numbers in the drills and the numbers in the scene are the same numbers.
+ * Simplified version - works like the drill mode.
  */
+
+import * as THREE from "../../vendor/three.module.js";
+import { buildChampionModel, animateModel } from "./models.js";
 
 const GROUND_Y = 0;
 
@@ -24,11 +21,9 @@ function makeFloorTexture(worldW, worldH) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // A worn lane running down the middle.
   ctx.fillStyle = "rgba(120,150,190,.045)";
   ctx.fillRect(0, canvas.height * 0.22, canvas.width, canvas.height * 0.56);
 
-  // Grid, one cell every 200 League units.
   ctx.strokeStyle = "rgba(130,170,220,.09)";
   ctx.lineWidth = 1;
   const cell = (200 / worldW) * canvas.width;
@@ -45,7 +40,6 @@ function makeFloorTexture(worldW, worldH) {
     ctx.stroke();
   }
 
-  // Speckle for texture.
   for (let i = 0; i < 2600; i++) {
     const x = Math.random() * canvas.width;
     const y = Math.random() * canvas.height;
@@ -59,68 +53,18 @@ function makeFloorTexture(worldW, worldH) {
   return texture;
 }
 
-function textSprite(text, color = "#ffffff") {
-  const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 128;
-  const ctx = canvas.getContext("2d");
-  ctx.font = '700 92px "Segoe UI", sans-serif';
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.strokeStyle = "rgba(0,0,0,.9)";
-  ctx.lineWidth = 14;
-  ctx.strokeText(text, 128, 64);
-  ctx.fillStyle = color;
-  ctx.fillText(text, 128, 64);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }),
-  );
-  sprite.scale.set(130, 65, 1);
-  return sprite;
-}
-
-function nameSprite(text) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 64;
-  const ctx = canvas.getContext("2d");
-  ctx.font = '700 40px "Segoe UI", sans-serif';
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.strokeStyle = "rgba(0,0,0,.85)";
-  ctx.lineWidth = 7;
-  ctx.strokeText(text, 128, 32);
-  ctx.fillStyle = "#e6ecf5";
-  ctx.fillText(text, 128, 32);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }),
-  );
-  sprite.scale.set(86, 22, 1);
-  return sprite;
-}
-
 export class Scene3D {
   constructor(container) {
     this.container = container;
 
-    // Create canvas explicitly to avoid context conflicts
-    const canvas = document.createElement('canvas');
-    canvas.style.display = 'block';
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
+    // Create canvas explicitly - Three.js needs a clean canvas without prior 2D context
+    const canvas = document.createElement("canvas");
+    canvas.style.display = "block";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
     container.appendChild(canvas);
 
-    // Get WebGL context immediately to avoid conflicts
-    const gl = canvas.getContext('webgl', { antialias: true, alpha: false });
-    if (!gl) {
-      console.error('[Scene3D] WebGL context not available!');
-    }
-
-    this.renderer = new THREE.WebGLRenderer({ canvas, context: gl, antialias: true, alpha: false });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setClearColor(0x070a0e, 1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -134,7 +78,7 @@ export class Scene3D {
     this.zoom = 1;
     this.cameraDistance = 850;
     this.cameraHeight = 800;
-    this.cameraPitch = 30; // degrees
+    this.cameraPitch = 30;
     this.focusTarget = new THREE.Vector3(0, 0, 0);
 
     const hemi = new THREE.HemisphereLight(0x8fb4e0, 0x1b2430, 0.85);
@@ -149,7 +93,6 @@ export class Scene3D {
     this.unitViews = new Map();
     this.shotViews = new Map();
     this.projectileViews = new Map();
-    this.powerupViews = new Map();
     this.markers = [];
     this.effects = [];
 
@@ -160,7 +103,6 @@ export class Scene3D {
     this.resize();
   }
 
-  /** Clears everything that belongs to a previous drill. */
   reset() {
     for (const [, view] of this.unitViews) this.scene.remove(view.model.root);
     this.unitViews.clear();
@@ -203,8 +145,6 @@ export class Scene3D {
     const padX = arena.w * 0.9;
     const padZ = arena.h * 0.9;
     const texture = makeFloorTexture(arena.w + padX * 2, arena.h + padZ * 2);
-    // The ground extends well past the arena walls so the camera never
-    // frames the edge of the world.
     const geo = new THREE.PlaneGeometry(arena.w + padX * 2, arena.h + padZ * 2);
     const mat = new THREE.MeshBasicMaterial({ map: texture });
     this.floor = new THREE.Mesh(geo, mat);
@@ -232,7 +172,6 @@ export class Scene3D {
     }
   }
 
-  /** Converts a client-space point into a point on the ground plane. */
   clientToGround(clientX, clientY) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -245,12 +184,10 @@ export class Scene3D {
     return { x: hit.x, y: hit.z };
   }
 
-  /** World position of a simulated point, at a given height. */
   place(obj, x, y, z = 0) {
     obj.position.set(x, z, y);
   }
 
-  /** Projects a point on the ground into client (CSS pixel) coordinates. */
   worldToScreen(x, y) {
     const v = new THREE.Vector3(x, 0, y).project(this.camera);
     const rect = this.renderer.domElement.getBoundingClientRect();
@@ -259,8 +196,6 @@ export class Scene3D {
       y: rect.top + (-v.y * 0.5 + 0.5) * rect.height,
     };
   }
-
-  // ── unit models ──────────────────────────────────────────────────
 
   syncUnits(world) {
     const seen = new Set();
@@ -277,7 +212,6 @@ export class Scene3D {
         blob.position.y = 2;
         model.root.add(blob);
 
-        // Health bar and name plate above the champion.
         const plate = new THREE.Group();
         plate.position.y = 215;
         const barBg = new THREE.Mesh(
@@ -289,7 +223,7 @@ export class Scene3D {
           new THREE.MeshBasicMaterial({ color: 0x46d39a }),
         );
         barFill.position.z = 1;
-        const label = nameSprite(unit.name || "?");
+        const label = this._makeNameSprite(unit.name || "?");
         label.position.y = 16;
         plate.add(barBg, barFill, label);
         model.root.add(plate);
@@ -306,29 +240,23 @@ export class Scene3D {
       view.facing += diff * 0.25;
       view.model.root.rotation.y = view.facing;
 
-      // Health bar - billboard: counter-rotate to always face camera
       const pct = Math.max(0, Math.min(1, unit.hp / Math.max(unit.maxHp, 1)));
       view.barFill.scale.x = Math.max(0.001, pct);
       view.barFill.position.x = -40 * (1 - pct);
       view.barFill.material.color.set(pct > 0.4 ? 0x46d39a : 0xff5f6d);
       view.plate.visible = unit.alive && unit.team !== "player";
-      // Counter-rotate plate to cancel model rotation (billboard effect)
-      if (view.plate) {
-        view.plate.rotation.y = -view.model.root.rotation.y;
-      }
 
       animateModel(view.model, unit, this.dt || 0.016, this.worldTime || 0);
       view.blob.visible = unit.alive;
     }
 
     for (const [id, view] of this.unitViews) {
-      if (seen.has(id)) continue;
-      this.scene.remove(view.model.root);
-      this.unitViews.delete(id);
+      if (!seen.has(id)) {
+        this.scene.remove(view.model.root);
+        this.unitViews.delete(id);
+      }
     }
   }
-
-  // ── range rings ──────────────────────────────────────────────────
 
   ensureRing(key, color, opacity = 0.18) {
     if (!this.rings) this.rings = new Map();
@@ -355,7 +283,6 @@ export class Scene3D {
     for (const ring of this.rings?.values() || []) ring.visible = false;
     if (!showRanges && !attackMoveActive) return;
 
-    // Player range ring - always show when attack-move is active, or when showRanges is on
     if (player && (showRanges || attackMoveActive)) {
       const own = this.ensureRing("player", 0x4ea1ff, attackMoveActive ? 0.35 : 0.22);
       own.visible = true;
@@ -370,12 +297,10 @@ export class Scene3D {
       const safe = player.attackRange > enemy.attackRange + 40;
       const ring = this.ensureRing(`enemy-${enemy.id}`, safe ? 0x46d39a : 0xff5f6d, 0.16);
       ring.visible = true;
-      ring.scale.setScalar(enemy.attackRange);
-      ring.position.set(enemy.x, 3, enemy.y);
+      own.scale.setScalar(enemy.attackRange);
+      own.position.set(enemy.x, 3, enemy.y);
     }
   }
-
-  // ── skillshots ───────────────────────────────────────────────────
 
   syncSkillshots(world) {
     const seen = new Set();
@@ -428,7 +353,6 @@ export class Scene3D {
         view.edge.scale.set(shot.width * 2, 14, 1);
         view.edge.position.set(shot.headX, 5, shot.headY);
         view.edge.rotation.set(-Math.PI / 2, 0, -angle);
-        // The telegraph shows the whole path while the cast charges.
         if (shot.phase === "telegraph") {
           view.mat.opacity = 0.12;
         } else {
@@ -448,7 +372,7 @@ export class Scene3D {
         view.mesh.visible = true;
         view.edge.visible = false;
         view.mesh.geometry.dispose();
-        view.mesh.geometry = new THREE.CircleGeometry(shot.length, 32, -Math.PI / 6, Math.PI / 3);
+        view.mesh.geometry = new THREE.CircleGeometry(shot.length, 32, -Math.PI / 2, Math.PI / 3);
         view.mesh.position.set(shot.x, 4, shot.y);
         view.mesh.rotation.set(-Math.PI / 2, 0, Math.atan2(shot.dirX, shot.dirY) - Math.PI / 2);
         view.mat.opacity = 0.18;
@@ -456,11 +380,12 @@ export class Scene3D {
     }
 
     for (const [key, view] of this.shotViews) {
-      if (seen.has(key)) continue;
-      this.scene.remove(view.mesh, view.edge);
-      view.mesh.geometry.dispose();
-      view.mat.dispose();
-      this.shotViews.delete(key);
+      if (!seen.has(key)) {
+        this.scene.remove(view.mesh, view.edge);
+        view.mesh.geometry.dispose();
+        view.mat.dispose();
+        this.shotViews.delete(key);
+      }
     }
   }
 
@@ -486,74 +411,11 @@ export class Scene3D {
       view.mesh.position.set(proj.x, 90, proj.y);
     }
     for (const [key, view] of this.projectileViews) {
-      if (seen.has(key)) continue;
-      this.scene.remove(view.mesh);
-      this.projectileViews.delete(key);
+      if (!seen.has(key)) {
+        this.scene.remove(view.mesh);
+        this.projectileViews.delete(key);
+      }
     }
-  }
-
-  // ── transient visuals ────────────────────────────────────────────
-
-  /** The LoL click marker: a ring that expands and fades at the target. */
-  showMoveMarker(x, y, color = 0x4ea1ff) {
-    const mesh = new THREE.Mesh(
-      new THREE.RingGeometry(20, 30, 32),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
-    );
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(x, 6, y);
-    this.scene.add(mesh);
-    this.markers.push({ mesh, life: 0, maxLife: 0.45 });
-  }
-
-  /** A ring under the unit the player is currently ordered to hit. */
-  setFocusTarget(unit) {
-    if (!this.focus) {
-      this.focus = new THREE.Mesh(
-        new THREE.RingGeometry(60, 70, 40),
-        new THREE.MeshBasicMaterial({
-          color: 0x46d39a, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false,
-        }),
-      );
-      this.focus.rotation.x = -Math.PI / 2;
-      this.focus.position.y = 5;
-      this.scene.add(this.focus);
-    }
-    this.focus.visible = Boolean(unit);
-    if (unit) this.focus.position.set(unit.x, 5, unit.y);
-  }
-
-  /**
-   * The punish window of the "dodge and counter" drill: a pulsing ring plus
-   * a label under the enemy you have to answer.
-   */
-  setPunishTarget(unit) {
-    if (!this.punish) {
-      this.punish = new THREE.Mesh(
-        new THREE.RingGeometry(80, 96, 40),
-        new THREE.MeshBasicMaterial({
-          color: 0x46d39a, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false,
-        }),
-      );
-      this.punish.rotation.x = -Math.PI / 2;
-      this.punish.position.y = 7;
-      this.scene.add(this.punish);
-      this.punishText = textSprite("CONTRA-ATAQUE", "#46d39a");
-      this.punishText.scale.set(120, 30, 1);
-      this.scene.add(this.punishText);
-    }
-    if (!unit) {
-      this.punish.visible = false;
-      this.punishText.visible = false;
-      return;
-    }
-    this.punish.visible = true;
-    this.punish.position.set(unit.x, 7, unit.y);
-    const pulse = 1 + Math.sin(this.worldTime * 9) * 0.08;
-    this.punish.scale.setScalar(pulse);
-    this.punish.material.opacity = 0.55 + Math.sin(this.worldTime * 9) * 0.25;
-    this.punishText.visible = true;
-    this.punishText.position.set(unit.x, 260, unit.y);
   }
 
   syncEffects(world) {
@@ -563,7 +425,7 @@ export class Scene3D {
       const key = `${effect.x.toFixed(0)}:${effect.y.toFixed(0)}:${effect.text}:${effect.life.toFixed(2)}`;
       seen.add(key);
       if (!this.effects.some((e) => e.key === key)) {
-        const sprite = textSprite(effect.text, effect.color);
+        const sprite = this._makeTextSprite(effect.text, effect.color);
         sprite.position.set(effect.x, 150, effect.y);
         this.scene.add(sprite);
         this.effects.push({ key, sprite, life: 0, maxLife: effect.maxLife });
@@ -584,18 +446,12 @@ export class Scene3D {
     }
   }
 
-  /** Render powerups as 3D models. */
   syncPowerups(powerups) {
     if (!powerups || !powerups.length) {
-      // Clean up any existing powerup views
       for (const [, view] of this.powerupViews) {
-        this.scene.remove(view.group);
-        view.core.geometry.dispose();
-        view.core.material.dispose();
-        view.ring.geometry.dispose();
-        view.ring.material.dispose();
-        view.iconSprite.material.map.dispose();
-        view.iconSprite.material.dispose();
+        this.scene.remove(view.mesh);
+        view.mesh.geometry.dispose();
+        view.mesh.material.dispose();
       }
       this.powerupViews.clear();
       return;
@@ -607,149 +463,74 @@ export class Scene3D {
       seen.add(key);
       let view = this.powerupViews.get(key);
       if (!view) {
-        // Create a 3D powerup model
-        const group = new THREE.Group();
-        
-        // Core sphere
-        const coreGeo = new THREE.SphereGeometry(30, 32, 32);
-        const coreMat = new THREE.MeshBasicMaterial({
+        const ringGeo = new THREE.RingGeometry(25, 35, 32);
+        const mat = new THREE.MeshBasicMaterial({
           color: pu.color,
           transparent: true,
-          opacity: 0.95,
-        });
-        const core = new THREE.Mesh(coreGeo, coreMat);
-        core.position.y = 35;
-        group.add(core);
-        
-        // Outer ring
-        const ringGeo = new THREE.RingGeometry(35, 42, 48);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: pu.color,
-          transparent: true,
-          opacity: 0.5,
+          opacity: 0.6,
           side: THREE.DoubleSide,
           depthWrite: false,
         });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
+        const ring = new THREE.Mesh(ringGeo, mat);
         ring.rotation.x = -Math.PI / 2;
-        ring.position.y = 35;
-        group.add(ring);
-        
-        // Icon sprite
+        ring.position.set(pu.x, 8, pu.y);
+        this.scene.add(ring);
+
+        const innerGeo = new THREE.RingGeometry(15, 22, 32);
+        const innerMat = new THREE.MeshBasicMaterial({
+          color: pu.color,
+          transparent: true,
+          opacity: 0.9,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        const inner = new THREE.Mesh(innerGeo, innerMat);
+        inner.rotation.x = -Math.PI / 2;
+        inner.position.set(pu.x, 9, pu.y);
+        this.scene.add(inner);
+
         const iconCanvas = document.createElement("canvas");
-        iconCanvas.width = 256;
-        iconCanvas.height = 256;
+        iconCanvas.width = 128;
+        iconCanvas.height = 128;
         const ictx = iconCanvas.getContext("2d");
-        ictx.font = "bold 160px Arial";
+        ictx.font = "bold 80px Arial";
         ictx.textAlign = "center";
         ictx.textBaseline = "middle";
         ictx.fillStyle = "#fff";
         ictx.shadowColor = "#000";
-        ictx.shadowBlur = 16;
-        ictx.fillText(pu.icon, 128, 144);
+        ictx.shadowBlur = 8;
+        ictx.fillText(pu.icon, 64, 72);
         const iconTexture = new THREE.CanvasTexture(iconCanvas);
         iconTexture.colorSpace = THREE.SRGBColorSpace;
         const iconSprite = new THREE.Sprite(
           new THREE.SpriteMaterial({ map: iconTexture, transparent: true, depthTest: false })
         );
-        iconSprite.scale.set(100, 100, 1);
-        iconSprite.position.y = 70;
-        group.add(iconSprite);
-        
-        group.position.set(pu.x, 0, pu.y);
-        this.scene.add(group);
-        
-        view = { group, core, ring, iconSprite, mat: coreMat, ringMat, pu };
+        iconSprite.scale.set(50, 50, 1);
+        iconSprite.position.set(pu.x, 45, pu.y);
+        this.scene.add(iconSprite);
+
+        view = { ring, inner, iconSprite, mat, innerMat };
         this.powerupViews.set(key, view);
       }
 
-      // Animate
       const time = this.worldTime || 0;
-      view.group.position.set(pu.x, 0, pu.y);
-      view.core.rotation.y += 0.02;
-      view.core.position.y = 22 + Math.sin(time * 3) * 4;
-      view.ring.rotation.z += 0.015;
-      view.ring.scale.setScalar(1 + Math.sin(time * 4) * 0.15);
-      view.iconSprite.position.y = 45 + Math.sin(time * 2) * 5;
-      view.group.position.set(pu.x, 0, pu.y);
-      
-      // Update colors if changed
-      if (view.pu.color !== pu.color) {
-        view.pu.color = pu.color;
-        view.core.material.color.set(pu.color);
-        view.ring.material.color.set(pu.color);
+      view.ring.position.set(pu.x, 8 + Math.sin(time * 3) * 3, pu.y);
+      view.inner.position.set(pu.x, 9 + Math.sin(time * 3 + 0.5) * 2, pu.y);
+      view.iconSprite.position.set(pu.x, 55 + Math.sin(time * 2) * 5, pu.y);
+      view.ring.rotation.z += 0.02;
+      view.inner.rotation.z -= 0.03;
+      view.ring.scale.setScalar(1 + Math.sin(time * 4) * 0.1);
+      view.inner.scale.setScalar(1 + Math.cos(time * 4) * 0.15);
+    }
+
+    for (const [key, view] of this.powerupViews) {
+      if (!seen.has(key)) {
+        this.scene.remove(view.mesh, view.edge);
+        view.mesh.geometry.dispose();
+        view.mat.dispose();
+        this.powerupViews.delete(key);
       }
     }
-
-    // Remove collected/despawned powerups
-    for (const [key, view] of this.powerupViews) {
-      if (seen.has(key)) continue;
-      this.scene.remove(view.group);
-      view.core.geometry.dispose();
-      view.core.material.dispose();
-      view.ring.geometry.dispose();
-      view.ring.material.dispose();
-      view.iconSprite.material.map.dispose();
-      view.iconSprite.material.dispose();
-      this.powerupViews.delete(key);
-    }
-  }  /**
-   * Applies the admin camera settings. The FOV change needs a projection
-   * update, and a zoom change is picked up by updateCamera on the next frame.
-   */
-  setCameraConfig({ zoom = 1, fov = 42, distance = 850, pitch = 30 } = {}) {
-    this.zoom = zoom > 0 ? zoom : 1;
-    this.cameraDistance = distance > 0 ? distance : 850;
-    this.cameraPitch = pitch > 0 ? pitch : 30;
-    if (this.camera.fov !== fov) {
-      this.camera.fov = fov;
-      this.camera.updateProjectionMatrix();
-    }
-  }
-
-  /**
-   * Updates camera position to follow the player.
-   */
-  updateCamera(player, dt, edgeScroll = null) {
-    if (!player) return;
-    const arena = this.arena;
-
-    if (edgeScroll) {
-      // Free camera: move focus point based on edge scroll
-      const speed = 2200 * dt; // units per second
-      this.cameraFocus.x += edgeScroll.x * speed;
-      this.cameraFocus.z += edgeScroll.y * speed;
-
-      // Clamp to arena bounds with margin
-      this.cameraFocus.x = Math.max(arena.x + 120, Math.min(arena.x + arena.w - 120, this.cameraFocus.x));
-      this.cameraFocus.z = Math.max(arena.y + 120, Math.min(arena.y + arena.h - 120, this.cameraFocus.z));
-    } else {
-      // Locked camera: focus point is the player (with damping)
-      const focusX = player.x;
-      const focusZ = player.y;
-      const clampX = Math.max(arena.x + 120, Math.min(arena.x + arena.w - 120, focusX));
-      const clampZ = Math.max(arena.y + 120, Math.min(arena.y + arena.h - 120, focusZ));
-      this.focusTarget.set(clampX, 0, clampZ);
-      const k = 1 - Math.pow(0.0015, dt);
-      this.cameraFocus.lerp(this.focusTarget, k);
-    }
-
-    const zoom = this.zoom || 1;
-    const distance = this.cameraDistance / zoom;
-
-    // Camera height derived from distance and pitch (LoL-style):
-    // pitch = angle from horizontal down to focus point
-    // tan(pitch) = height / distance  =>  height = distance * tan(pitch)
-    const pitchRad = THREE.MathUtils.degToRad(this.cameraPitch);
-    const height = distance * Math.tan(pitchRad);
-
-    // Camera positioned behind and above the focus point, looking AT the focus point
-    this.camera.position.set(
-      this.cameraFocus.x,
-      height,
-      this.cameraFocus.z + distance,
-    );
-    this.camera.lookAt(this.cameraFocus.x, 0, this.cameraFocus.z);
   }
 
   render(world, opts = {}) {
@@ -762,9 +543,8 @@ export class Scene3D {
     this.syncSkillshots(world);
     this.syncProjectiles(world);
     this.syncEffects(world);
-    this.setFocusTarget(opts.focusTarget);
-    this.setPunishTarget(opts.punishTarget || null);
     this.syncPowerups(opts.powerups);
+    this.setFocusTarget(opts.focusTarget);
     this.updateCamera(opts.player, dt);
 
     for (let i = this.markers.length - 1; i >= 0; i--) {
@@ -782,5 +562,77 @@ export class Scene3D {
     }
 
     this.renderer.render(this.scene, this.camera);
+  }
+
+  showMoveMarker(x, y, color = 0x4ea1ff) {
+    const mesh = new THREE.Mesh(
+      new THREE.RingGeometry(20, 30, 32),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
+    );
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x, 6, y);
+    this.scene.add(mesh);
+    this.markers.push({ mesh, life: 0, maxLife: 0.45 });
+  }
+
+  setFocusTarget(unit) {
+    if (!this.focus) {
+      this.focus = new THREE.Mesh(
+        new THREE.RingGeometry(60, 70, 40),
+        new THREE.MeshBasicMaterial({
+          color: 0x46d39a, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false,
+        }),
+      );
+      this.focus.rotation.x = -Math.PI / 2;
+      this.focus.position.y = 5;
+      this.scene.add(this.focus);
+    }
+    this.focus.visible = Boolean(unit);
+    if (unit) this.focus.position.set(unit.x, 5, unit.y);
+  }
+
+  updateCamera(player, dt, edgeScroll = null) {
+    if (!player) return;
+    const arena = this.arena;
+
+    if (edgeScroll) {
+      const speed = 2200 * dt;
+      this.cameraFocus.x += edgeScroll.x * speed;
+      this.cameraFocus.z += edgeScroll.y * speed;
+
+      this.cameraFocus.x = Math.max(arena.x + 120, Math.min(arena.x + arena.w - 120, this.cameraFocus.x));
+      this.cameraFocus.z = Math.max(arena.y + 120, Math.min(arena.y + arena.h - 120, this.cameraFocus.z));
+    } else {
+      const focusX = player.x;
+      const focusZ = player.y;
+      const clampX = Math.max(arena.x + 120, Math.min(arena.x + arena.w - 120, focusX));
+      const clampZ = Math.max(arena.y + 120, Math.min(arena.y + arena.h - 120, focusZ));
+      this.focusTarget.set(clampX, 0, clampZ);
+      const k = 1 - Math.pow(0.0015, dt);
+      this.cameraFocus.lerp(this.focusTarget, k);
+    }
+
+    const zoom = this.zoom || 1;
+    const distance = this.cameraDistance / zoom;
+
+    const pitchRad = THREE.MathUtils.degToRad(this.cameraPitch);
+    const height = distance * Math.tan(pitchRad);
+
+    this.camera.position.set(
+      this.cameraFocus.x,
+      height,
+      this.cameraFocus.z + distance,
+    );
+    this.camera.lookAt(this.cameraFocus.x, 0, this.cameraFocus.z);
+  }
+
+  setCameraConfig({ zoom = 1, fov = 42, distance = 850, pitch = 30 } = {}) {
+    this.zoom = zoom > 0 ? zoom : 1;
+    this.cameraDistance = distance > 0 ? distance : 850;
+    this.cameraPitch = pitch > 0 ? pitch : 30;
+    if (this.camera.fov !== fov) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
   }
 }
