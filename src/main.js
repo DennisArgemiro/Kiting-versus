@@ -891,7 +891,9 @@ function bindGlobalEvents() {
     }
     if (app.arenaSession) {
       app.arenaSession.scene.resize();
-      app.arenaSession.scene.setArena(app.arenaSession.run.world.arena);
+      if (app.arenaSession.arena && app.arenaSession.arena.run) {
+        app.arenaSession.scene.setArena(app.arenaSession.arena.run.world.arena);
+      }
     }
   });
 }
