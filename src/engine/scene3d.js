@@ -106,14 +106,18 @@ function nameSprite(text) {
 export class Scene3D {
   constructor(container) {
     this.container = container;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+
+    // Create canvas explicitly to avoid context conflicts
+    const canvas = document.createElement('canvas');
+    canvas.style.display = 'block';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    container.appendChild(canvas);
+
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setClearColor(0x070a0e, 1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    container.appendChild(this.renderer.domElement);
-    this.renderer.domElement.style.display = "block";
-    this.renderer.domElement.style.width = "100%";
-    this.renderer.domElement.style.height = "100%";
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x080c12);
