@@ -578,13 +578,21 @@ export class Scene3D {
 
     for (const [key, view] of this.powerupViews) {
       if (!seen.has(key)) {
-        this.scene.remove(view.mesh, view.edge);
-        view.mesh.geometry.dispose();
-        view.inner.geometry.dispose();
-        view.mat.dispose();
-        view.innerMat.dispose();
-        view.iconSprite.material.map.dispose();
-        view.iconSprite.material.dispose();
+        if (view.ring) {
+          this.scene.remove(view.ring);
+          view.ring.geometry.dispose();
+          view.ring.material.dispose();
+        }
+        if (view.inner) {
+          this.scene.remove(view.inner);
+          view.inner.geometry.dispose();
+          view.innerMat.dispose();
+        }
+        if (view.iconSprite) {
+          this.scene.remove(view.iconSprite);
+          view.iconSprite.material.map.dispose();
+          view.iconSprite.material.dispose();
+        }
         this.powerupViews.delete(key);
       }
     }
