@@ -455,10 +455,6 @@ function verdictFor(score, outcome) {
 // Drill 1 — Kiting de Separação (Dummy de 3 hits)
 // ───────────────────────────────────────────────────────────────────────────
 
-// ───────────────────────────────────────────────────────────────────────────
-// Drill 1 — Kiting de Separação (Dummy de 3 hits)
-// ───────────────────────────────────────────────────────────────────────────
-
 class SpacingKitingDrill {
   constructor({ champion, level, params, rng, champions, onMoveMarker }) {
     this.world = new World(ARENA);
@@ -475,14 +471,15 @@ class SpacingKitingDrill {
     // Calcular nível atual para definir vida dos dummies
     this.levelNum = (level && level.index) || 1;
 
+    // Create player first so we can use its stats for dummy HP
+    this.player = makePlayer(champion, ARENA.w * 0.5, ARENA.h * 0.5, 1, 1); // attackSpeedScale = 1 (sem limitação)
+    applyPlayerStats(this.player, params.playerStats, params.playerHpScale ?? 1);
+    this.world.add(this.player);
+
     // Vida dos dummies: aumenta até o nível 5 (máx 6 hits), depois volta para 3
     const dummyHits = this.levelNum >= 1 && this.levelNum <= 5 ? this.levelNum : 3;
     this.dummyHitsToKill = dummyHits;
     this.dummyHp = Math.max(1, Math.round((this.player.attackDamage || 60) * dummyHits));
-
-    this.player = makePlayer(champion, ARENA.w * 0.5, ARENA.h * 0.5, 1, 1); // attackSpeedScale = 1 (sem limitação)
-    applyPlayerStats(this.player, params.playerStats, params.playerHpScale ?? 1);
-    this.world.add(this.player);
 
     // Score system
     this.score = 0;
