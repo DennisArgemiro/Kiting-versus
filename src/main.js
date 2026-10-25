@@ -26,20 +26,163 @@ const app = {
   loop: null,
   admin: null,
   config,
-  // Arena
   arenaSession: null,
-  // Online multiplayer
   socket: null,
-  onlineRoom: null,      // { roomCode, role: 'p1'|'p2' }
-  onlineOpponent: null,  // { x, y, hp, maxHp, alive, order, alias }
+  onlineRoom: null,
+  onlineOpponent: null,
   onlineConnected: false,
   onlineLobbyActive: false,
   onlineLobbyTimer: 0,
+  adminAuthenticated: false,
 };
 
-// ────────────────────────────── Online Multiplayer (Socket.io) ──────────────────────────────
+const SOCKET_URL = 'http://localhost:3002';
+const ADMIN_AUTH_KEY = 'skillgap-web.admin-auth';
+const ADMIN_SESSION_KEY = 'skillgap-web.admin-session';
+const DEFAULT_ADMIN_PASSWORD_HASH = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9';
 
-const SOCKET_URL = 'http://localhost:3002'; // Change to server IP for online play
+async function hashPassword(password) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function getStoredPasswordHash() {
+  try {
+    const stored = localStorage.getItem('skillgap-web.admin-password');
+    return stored || DEFAULT_ADMIN_PASSWORD_HASH;
+  } catch {
+    return DEFAULT_ADMIN_PASSWORD_HASH;
+  }
+}
+
+function setStoredPasswordHash(hash) {
+  try {
+    localStorage.setItem('skillgap-web.admin-password', hash);
+  } catch {}
+}
+
+function isAdminAuthenticated() {
+  try {
+    const session = sessionStorage.getItem(ADMIN_SESSION_KEY);
+    if (session === 'authenticated') return true;
+    const persistent = localStorage.getItem(ADMIN_AUTH_KEY);
+    return persistent === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function setAdminAuthenticated(remember = false) {
+  try {
+    sessionStorage.setItem(ADMIN_SESSION_KEY, 'authenticated');
+    if (remember) {
+      localStorage.setItem(ADMIN_AUTH_KEY, 'true');
+    }
+    app.adminAuthenticated = true;
+  } catch {
+    app.adminAuthenticated = true;
+  }
+}
+
+function clearAdminAuth() {
+  try {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    localStorage.removeItem(ADMIN_AUTH_KEY);
+  } catch {}
+  app.adminAuthenticated = false;
+}
+
+async function verifyAdminPassword(password) {
+  const hash = await hashPassword(password);
+  const storedHash = getStoredPasswordHash();
+  return hash === storedHash;
+}
+
+async function changeAdminPassword(currentPassword, newPassword) {
+  const verified = await verifyAdminPassword(currentPassword);
+  if (!verified) return { success: false, error: 'Senha atual incorreta' };
+  const newHash = await hashPassword(newPassword);
+  setStoredPasswordHash(newHash);
+  return { success: true };
+}
+
+function showAdminLogin(error = '') {
+  showScreen('admin-login');
+  const errorEl = $('#login-error');
+  const passwordInput = $('#admin-password');
+  if (error) {
+    errorEl.textContent = error;
+    errorEl.classList.add('visible');
+  } else {
+    errorEl.textContent = '';
+    errorEl.classList.remove('visible');
+  }
+  passwordInput.value = '';
+  passwordInput.focus();
+}
+
+function bindAdminLoginEvents() {
+  const form = $('#admin-login-form');
+  const backBtn = $('#login-back');
+  const passwordInput = $('#admin-password');
+  const errorEl = $('#login-error');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const password = passwordInput.value;
+    if (!password) return;
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Verificando...';
+    errorEl.classList.remove('visible');
+
+    try {
+      const valid = await verifyAdminPassword(password);
+      if (valid) {
+        setAdminAuthenticated(true);
+        errorEl.classList.remove('visible');
+        app.admin?.render();
+        showScreen('admin');
+      } else {
+        errorEl.textContent = 'Senha incorreta. Tente novamente.';
+        errorEl.classList.add('visible');
+        passwordInput.value = '';
+        passwordInput.focus();
+      }
+    } catch (err) {
+      errorEl.textContent = 'Erro ao verificar senha.';
+      errorEl.classList.add('visible');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Entrar';
+    }
+  });
+
+  backBtn.addEventListener('click', () => {
+    showScreen('menu');
+  });
+
+  passwordInput.addEventListener('input', () => {
+    errorEl.classList.remove('visible');
+  });
+}
+
+function requireAdminAuth() {
+  if (!isAdminAuthenticated()) {
+    showAdminLogin();
+    return false;
+  }
+  return true;
+}
+
+function logoutAdmin() {
+  clearAdminAuth();
+  showScreen('menu');
+}
 
 function initSocket() {
   if (!window.io) {
@@ -172,13 +315,14 @@ function startOnlineMatch() {
   scene.setArena(ARENA);
   input1.reset();
 
-  const isBot = false; // Online is always PvP
+  const isBot = false;
   const arena = new ArenaMode({
     champion1,
     champion2,
     isBot,
     botDifficulty: 'normal',
-    powerupsEnabled: $("#arena-powerups-enabled").checked,
+    powerupsEnabled: $("#arena-powerups-enabled") ? $("#arena-powerups-enabled").checked : true,
+    abilitiesEnabled: $("#arena-abilities-enabled") ? $("#arena-abilities-enabled").checked : true,
     rng,
     onMoveMarker: (x, y, color) => scene.showMoveMarker(x, y, color),
   });
@@ -195,29 +339,34 @@ function startOnlineMatch() {
 
   const loop = new Loop(
     function(dt) {
-      // Send player input to server
-      if (app.socket && app.socket.connected && app.onlineRoom) {
+      if (app.socket && app.socket.connected && app.onlineRoom && arena.player1) {
         const player = arena.player1;
-        app.socket.emit('player-input', {
-          roomCode: app.onlineRoom.roomCode,
-          role: app.onlineRoom.role,
-          input: {
-            x: player.x,
-            y: player.y,
-            orderKind: player.controller.order.kind,
-            orderPoint: player.controller.order.point,
-            orderTarget: player.controller.order.target,
-            attackTimer: player.attackTimer,
-            casting: player.casting,
-          },
-          hp: player.hp,
-          maxHp: player.maxHp,
-          alive: player.alive,
-          timestamp: Date.now(),
-        });
+        try {
+          app.socket.emit('player-input', {
+            roomCode: app.onlineRoom.roomCode,
+            role: app.onlineRoom.role,
+            input: {
+              x: player.x,
+              y: player.y,
+              orderKind: player.controller?.order?.kind || 'stop',
+              orderPoint: player.controller?.order?.point,
+              orderTarget: player.controller?.order?.target,
+              attackTimer: player.attackTimer,
+              casting: player.casting,
+            },
+            hp: player.hp,
+            maxHp: player.maxHp,
+            alive: player.alive,
+            timestamp: Date.now(),
+          });
+        } catch (e) {}
       }
 
-      arena.update(dt, input1, null);
+      try {
+        arena.update(dt, input1, null);
+      } catch (e) {
+        console.error('arena update error', e);
+      }
 
       if (arena.finished && app.arenaSession && !app.arenaSession.ending) {
         app.arenaSession.ending = true;
@@ -230,17 +379,24 @@ function startOnlineMatch() {
       lastFrame = now;
       const combat = config.combat();
       const edgeScroll = combat.cameraLocked ? null : input1.getEdgeScroll();
-      arena.render(scene, {
-        showRanges: combat.showRanges,
-        dt: lastDelta,
-        attackMoveActive: input1.attackMoveActive,
-        focusTarget: arena.player1.controller.target,
-        powerups: arena.powerups,
-      });
-      scene.updateCamera(arena.player1, lastDelta, edgeScroll);
-      updateArenaHud(arena, input1);
-      $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
-      input1.endFrame();
+      try {
+        arena.render(scene, {
+          showRanges: true,
+          dt: lastDelta,
+          attackMoveActive: input1.attackMoveActive,
+          input: input1,
+          focusTarget: arena.player1?.controller?.target,
+          powerups: arena.powerups,
+        });
+        if (arena.player1) {
+          scene.updateCamera(arena.player1, lastDelta, edgeScroll);
+        }
+        updateArenaHud(arena, input1);
+        $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
+        input1.endFrame();
+      } catch (e) {
+        console.error('arena render error', e);
+      }
     }
   );
 
@@ -261,13 +417,11 @@ function applyOpponentInput(role, input) {
   const opponent = role === 'p1' ? arena.player2 : arena.player1;
   if (!opponent || !opponent.alive) return;
 
-  // Apply opponent state
   opponent.x = input.x;
   opponent.y = input.y;
   opponent.hp = input.hp;
   opponent.alive = input.alive;
 
-  // Apply order
   if (input.orderKind === 'move' && input.orderPoint) {
     opponent.controller.moveTo(input.orderPoint.x, input.orderPoint.y);
   } else if (input.orderKind === 'attack' && input.orderTarget) {
@@ -282,16 +436,12 @@ function applyOpponentInput(role, input) {
   opponent.casting = input.casting;
 }
 
-// ────────────────────────────── boot ──────────────────────────────
-
 async function boot() {
   const response = await fetch("./src/data/champions.json");
   const data = await response.json();
   app.rawChampions = data.champions;
   app.champions = applyChampionOverrides(structuredClone(app.rawChampions));
 
-  // Snapshot real do Skill Gap (Firestore).  Se o arquivo não existir, os
-  // treinos caem de volta nas tabelas antigas, sem impedir o app de abrir.
   try {
     const sgResponse = await fetch("./src/data/skillgap-levels.json");
     if (sgResponse.ok) app.skillgap = await sgResponse.json();
@@ -300,34 +450,24 @@ async function boot() {
   }
 
   syncArena();
-
   rebuildDrills();
-
-  // Debug handle: lets the automated driver (tools/probe.mjs) read the live
-  // simulation state and play the drill.
   window.__trainer = app;
 
   buildChampionSelect();
   renderMenu();
   bindGlobalEvents();
   bindArenaEvents();
+  bindAdminLoginEvents();
   initSocket();
 
   app.admin = createAdmin({ app, onApply: applyConfig });
 }
 
 function rebuildDrills() {
-  app.drills = buildDrills(app.champions, app.skillgap);
+  app.drills = buildDrills(app.champions, app.skillgap, config.state.modosDrills);
   app.byId = new Map(app.drills.map((d) => [d.id, d]));
 }
 
-/**
- * Re-applies the persisted configuration to the live game objects.
- *
- * The champion list is rebuilt from the pristine JSON on every change, so
- * resetting an override actually restores the original numbers instead of
- * layering on top of the previous edit.
- */
 function applyConfig() {
   app.champions = applyChampionOverrides(structuredClone(app.rawChampions));
   rebuildDrills();
@@ -336,8 +476,6 @@ function applyConfig() {
   buildChampionSelect();
   renderMenu();
 }
-
-// ────────────────────────────── screens ──────────────────────────────
 
 function showScreen(id) {
   document.querySelectorAll(".screen").forEach((s) => s.classList.remove("is-active"));
@@ -354,8 +492,6 @@ function banner(text, tone = "") {
   }, 2200);
 }
 
-// ────────────────────────────── menu ──────────────────────────────
-
 function buildChampionSelect() {
   const select = $("#champion-select");
   select.innerHTML = "";
@@ -370,8 +506,6 @@ function buildChampionSelect() {
     select.value = app.champions[0].alias;
     store.setChampion(select.value);
   }
-  // `onchange` instead of addEventListener: this function runs again after
-  // every admin change, and stacked listeners would fire multiple times.
   select.onchange = () => {
     store.setChampion(select.value);
     renderMenu();
@@ -497,14 +631,10 @@ function renderProgressSummary() {
   `;
 }
 
-// ────────────────────────────── drill session ──────────────────────────────
-
 function startDrill(drill, level) {
   const champion = championByAlias(store.champion());
   const rng = makeRng((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0);
 
-  // Apply the admin overrides for this drill (duration, enemy count, ...)
-  // without mutating the level table itself.
   const runLevel = { ...level, params: applyDrillOverrides(drill.id, level.params) };
 
   let run;
@@ -516,9 +646,6 @@ function startDrill(drill, level) {
     return;
   }
 
-  // One scene and one input for the whole session: creating a new WebGL
-  // canvas per drill would stack them inside the stage and push the newest
-  // one off screen (and leak a GL context every time).
   const stage = $("#game-stage");
   if (!app.scene) {
     app.scene = new Scene3D(stage);
@@ -528,7 +655,6 @@ function startDrill(drill, level) {
   }
   const scene = app.scene;
   const input = app.input;
-  // Sync camera lock from config (in case it was changed in admin)
   input._cameraLocked = config.combat().cameraLocked;
   scene.setCameraConfig({ ...config.camera(), pitch: config.combat().cameraPitch });
   scene.reset();
@@ -553,7 +679,7 @@ function startDrill(drill, level) {
       lastFrame = now;
       const combat = config.combat();
       const edgeScroll = combat.cameraLocked ? null : input.getEdgeScroll();
-      run.render(scene, { showRanges: combat.showRanges, dt: lastDelta, attackMoveActive: input.attackMoveActive });
+      run.render(scene, { showRanges: combat.showRanges, dt: lastDelta, attackMoveActive: input.attackMoveActive, input });
       scene.updateCamera(run.player, lastDelta, edgeScroll);
       updateHud(run);
       $("#game-stage").classList.toggle("is-attackmove", input.attackMoveActive);
@@ -585,12 +711,13 @@ function updateHud(run) {
   const hpPct = Math.max(0, Math.min(1, run.player.hp / run.player.maxHp));
   const hpBar = $("#hud-hp");
   
-  // Initialize abilities HUD on first run
   if (!updateHud._abilitiesInited) {
     renderAbilitiesHud(run.player, "#hud-abilities");
+    renderAttributesHud(run.player, "#hud-attributes");
     updateHud._abilitiesInited = true;
   }
   updateAbilitiesCooldowns(run.player, "#hud-abilities");
+  updateAttributesHud(run.player, "#hud-attributes");
   hpBar.style.width = `${hpPct * 100}%`;
   hpBar.parentElement.classList.toggle("low", hpPct < 0.35);
   $("#hud-hp-text").textContent = `${Math.round(run.player.hp)}`;
@@ -649,8 +776,6 @@ function abortDrill() {
   renderMenu();
   showScreen("menu");
 }
-
-// ────────────────────────────── results ──────────────────────────────
 
 function showResults(drill, level, result, outcome) {
   $("#results-drill").textContent = `${drill.name} — nível ${level.index}`;
@@ -764,7 +889,6 @@ function drawHistory(drill) {
     ctx.stroke();
   }
 
-  // Unlock threshold.
   const ty = h - pad - (drill.unlockScore / max) * (h - pad * 2);
   ctx.strokeStyle = "rgba(70,211,154,.45)";
   ctx.setLineDash([4, 4]);
@@ -794,8 +918,6 @@ function drawHistory(drill) {
     ctx.fill();
   });
 }
-
-// ────────────────────────────── statistics ──────────────────────────────
 
 function renderStats() {
   const summary = store.summary();
@@ -835,8 +957,6 @@ function renderStats() {
   `;
 }
 
-// ────────────────────────────── events ──────────────────────────────
-
 function bindGlobalEvents() {
   document.querySelectorAll("#drill-filters .chip").forEach((chip) => {
     chip.addEventListener("click", () => {
@@ -854,8 +974,10 @@ function bindGlobalEvents() {
     showScreen("stats");
   });
   $("#open-admin").addEventListener("click", () => {
-    app.admin?.render();
-    showScreen("admin");
+    if (requireAdminAuth()) {
+      app.admin?.render();
+      showScreen("admin");
+    }
   });
   $("#admin-close").addEventListener("click", () => showScreen("menu"));
   $("#stats-close").addEventListener("click", () => showScreen("menu"));
@@ -874,14 +996,11 @@ function bindGlobalEvents() {
     }
   });
 
-  // The right button is a game command, so the native context menu must
-  // never appear while a drill is running - not on the canvas, not on the
-  // HUD, not anywhere else in the drill screen.
   document.addEventListener("contextmenu", (e) => {
-    if (app.session) e.preventDefault();
+    if (app.session || app.arenaSession) e.preventDefault();
   }, true);
   document.addEventListener("mousedown", (e) => {
-    if (app.session && e.button === 2) e.preventDefault();
+    if ((app.session || app.arenaSession) && e.button === 2) e.preventDefault();
   }, true);
 
   window.addEventListener("resize", () => {
@@ -899,36 +1018,29 @@ function bindGlobalEvents() {
 }
 
 function bindArenaEvents() {
-  // Arena button in main menu
   const openArenaBtn = $("#open-arena");
   if (openArenaBtn) openArenaBtn.addEventListener("click", () => {
     renderArenaSetup();
     showScreen("arena-setup");
   });
   
-  // Arena setup close
   const closeBtn = $("#arena-setup-close");
   if (closeBtn) closeBtn.addEventListener("click", () => showScreen("menu"));
   
-  // Bot difficulty change
   const diffSel = $("#arena-bot-difficulty");
   if (diffSel) diffSel.addEventListener("change", () => {});
   
-  // Start vs Bot
   const startBotBtn = $("#arena-start-bot");
   if (startBotBtn) startBotBtn.addEventListener("click", () => startArena({ isBot: true, mode: 'bot' }));
   
-  // Start PvP Online
   const startOnlineBtn = $("#arena-start-online");
   if (startOnlineBtn) startOnlineBtn.addEventListener("click", () => {
     app.socket.emit('find-match', { champion: $("#arena-p1-champion").value });
   });
   
-  // Arena exit
   const exitBtn = $("#arena-exit");
   if (exitBtn) exitBtn.addEventListener("click", abortArena);
   
-  // Modal buttons
   const rematchBtn = $("#arena-result-modal .modal-rematch");
   if (rematchBtn) rematchBtn.addEventListener("click", () => {
     hideArenaResultModal();
@@ -945,10 +1057,8 @@ function bindArenaEvents() {
 }
 
 function renderArenaSetup() {
-  // Get main menu's selected champion
   const mainChampion = store.champion();
   
-  // Populate bot champion select
   const botSelect = $("#arena-bot-champion");
   botSelect.innerHTML = "";
   for (const champion of app.champions) {
@@ -959,7 +1069,6 @@ function renderArenaSetup() {
   }
   botSelect.value = app.champions[1]?.alias || app.champions[0].alias;
   
-  // Populate P1 champion select
   const p1Select = $("#arena-p1-champion");
   p1Select.innerHTML = "";
   for (const champion of app.champions) {
@@ -968,17 +1077,14 @@ function renderArenaSetup() {
     o1.textContent = champion.name;
     p1Select.appendChild(o1);
   }
-  // P1 uses main menu's selected champion
   p1Select.value = mainChampion;
 }
 
 function startArena(opts) {
   const { isBot, mode = 'bot' } = opts;
-  // Store for rematch
   app.lastArenaSettings = opts;
   
   if (mode === 'online') {
-    // Go to lobby screen for online matchmaking
     startOnlineLobby(opts);
     return;
   }
@@ -988,7 +1094,6 @@ function startArena(opts) {
   if (isBot) {
     champion2 = app.champions.find(c => c.alias === $("#arena-bot-champion").value) || app.champions[1];
   } else {
-    // Local PvP removed - only online via Socket.io
     champion2 = app.champions[1];
   }
   
@@ -1018,11 +1123,11 @@ function startArena(opts) {
     isBot,
     botDifficulty,
     powerupsEnabled,
+    abilitiesEnabled: $("#arena-abilities-enabled") ? $("#arena-abilities-enabled").checked : true,
     rng,
     onMoveMarker: (x, y, color) => scene.showMoveMarker(x, y, color),
   });
   
-  // Override showBanner for powerup messages
   arena.showBanner = function(text, tone) {
     const el = $("#arena-banner");
     el.textContent = text;
@@ -1033,7 +1138,6 @@ function startArena(opts) {
     }, 2000);
   };
   
-  // Initialize powerup HUD
   if (!document.getElementById("arena-hud-powerups")) {
     const hudAbilities = $("#arena-hud-abilities");
     if (hudAbilities) {
@@ -1046,29 +1150,34 @@ function startArena(opts) {
   
   const loop = new Loop(
     function(dt) {
-      // Online: send player input to server
-      if (app.socket && app.socket.connected && app.onlineRoom && !isBot) {
+      if (app.socket && app.socket.connected && app.onlineRoom && !isBot && arena.player1) {
         const player = arena.player1;
-        app.socket.emit('player-input', {
-          roomCode: app.onlineRoom.roomCode,
-          role: app.onlineRoom.role,
-          input: {
-            x: player.x,
-            y: player.y,
-            orderKind: player.controller.order.kind,
-            orderPoint: player.controller.order.point,
-            orderTarget: player.controller.order.target ? 'unit' : null,
-            attackTimer: player.attackTimer,
-            casting: player.casting,
-          },
-          hp: player.hp,
-          maxHp: player.maxHp,
-          alive: player.alive,
-          timestamp: Date.now(),
-        });
+        try {
+          app.socket.emit('player-input', {
+            roomCode: app.onlineRoom.roomCode,
+            role: app.onlineRoom.role,
+            input: {
+              x: player.x,
+              y: player.y,
+              orderKind: player.controller?.order?.kind || 'stop',
+              orderPoint: player.controller?.order?.point,
+              orderTarget: player.controller?.order?.target ? 'unit' : null,
+              attackTimer: player.attackTimer,
+              casting: player.casting,
+            },
+            hp: player.hp,
+            maxHp: player.maxHp,
+            alive: player.alive,
+            timestamp: Date.now(),
+          });
+        } catch (e) {}
       }
       
-      arena.update(dt, input1, null);
+      try {
+        arena.update(dt, input1, null);
+      } catch (e) {
+        console.error('arena update error', e);
+      }
       
       if (arena.finished && app.arenaSession && !app.arenaSession.ending) {
         app.arenaSession.ending = true;
@@ -1082,27 +1191,47 @@ function startArena(opts) {
       const combat = config.combat();
       const edgeScroll = combat.cameraLocked ? null : input1.getEdgeScroll();
       
-      arena.render(scene, { 
-        showRanges: combat.showRanges, 
-        dt: lastDelta, 
-        attackMoveActive: input1.attackMoveActive,
-        focusTarget: arena.player1.controller.target,
-        powerups: arena.powerups,
-        // Render opponent from online input
-        opponent: app.onlineOpponent,
-      });
-      scene.updateCamera(arena.player1, lastDelta, edgeScroll);
-      updateArenaHud(arena, input1);
-      $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
-      input1.endFrame();
+      try {
+        const attackMoveActive = input1.attackMoveActive;
+        const showRanges = combat.showRanges !== false;
+        if (attackMoveActive !== this._lastAttackMoveActive) {
+          console.log('[main] attackMoveActive changed:', attackMoveActive, 'keysA:', input1.keys?.has('KeyA'));
+          this._lastAttackMoveActive = attackMoveActive;
+        }
+        arena.render(scene, { 
+          showRanges: showRanges, 
+          dt: lastDelta, 
+          attackMoveActive,
+          input: input1,
+          focusTarget: arena.player1?.controller?.target,
+          powerups: arena.powerups,
+          opponent: app.onlineOpponent,
+        });
+        if (arena.player1) {
+          scene.updateCamera(arena.player1, lastDelta, edgeScroll);
+        }
+        updateArenaHud(arena, input1);
+        $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
+        input1.endFrame();
+      } catch (e) {
+        console.error('arena render error', e);
+      }
     }
   );
   
   app.arenaSession = { arena, scene, input1, input2: null, loop, ending: false };
   lastFrame = performance.now();
   
-  // Populate abilities HUD for P1
-  renderAbilitiesHud(arena.player1, "#arena-hud-abilities");
+  const abilHud = document.getElementById("arena-hud-abilities");
+  if (abilHud) {
+    if (arena.abilitiesEnabled) {
+      renderAbilitiesHud(arena.player1, "#arena-hud-abilities");
+      abilHud.style.display = "flex";
+    } else {
+      abilHud.style.display = "none";
+    }
+  }
+  updateArenaHud(arena, input1);
   
   showScreen("arena");
   requestAnimationFrame(() => {
@@ -1113,7 +1242,6 @@ function startArena(opts) {
 }
 
 function startOnlineLobby(opts) {
-  // Queue for online matchmaking - Socket.io will match players automatically
   app.socket.emit('find-match', { champion: $("#arena-p1-champion").value });
 }
 
@@ -1127,9 +1255,14 @@ function getChampionEmoji(alias) {
     Annie: '🧸', Zed: '🗡️', Syndra: '🔮', Velkoz: '👁️'
   };
   return emojis[alias] || '❓';
-}function abortArena() {
+}
+
+function abortArena() {
   if (!app.arenaSession) return;
-  app.arenaSession.loop.stop();
+  try { app.arenaSession.loop.stop(); } catch {}
+  if (app.arenaScene) {
+    try { app.arenaScene.reset(); } catch {}
+  }
   app.arenaSession = null;
   app.arenaInput2 = null;
   renderMenu();
@@ -1137,8 +1270,12 @@ function getChampionEmoji(alias) {
 }
 
 function finishArena() {
+  if (!app.arenaSession) return;
   const { arena, loop } = app.arenaSession;
-  loop.stop();
+  try { loop.stop(); } catch {}
+  if (app.arenaScene) {
+    try { app.arenaScene.reset(); } catch {}
+  }
   app.arenaSession = null;
   app.arenaInput2 = null;
   
@@ -1148,7 +1285,6 @@ function finishArena() {
   else if (result.winner === 'p2') winnerText = "Jogador 2 venceu!";
   else winnerText = "Empate!";
   
-  // Show modal instead of separate screen
   showArenaResultModal({
     winner: result.winner,
     p1Score: result.p1Score,
@@ -1164,7 +1300,6 @@ function showArenaResultModal(data) {
   const modal = $("#arena-result-modal");
   if (!modal) return;
   
-  // Fill content
   modal.querySelector(".modal-title").textContent = data.winner === 'draw' ? "Empate!" : data.winnerText;
   modal.querySelector(".modal-score").textContent = data.p1Score + " x " + data.p2Score;
   modal.querySelector(".modal-champions").innerHTML = 
@@ -1172,7 +1307,6 @@ function showArenaResultModal(data) {
   modal.querySelector(".modal-duration").textContent = "Duração: " + formatTime(data.duration);
   modal.querySelector(".modal-medal").textContent = data.winner === 'draw' ? "🤝" : (data.winner === 'p1' ? "🏆" : "🥈");
   
-  // Button handlers
   const rematchBtn = modal.querySelector(".modal-rematch");
   const menuBtn = modal.querySelector(".modal-menu");
   
@@ -1197,34 +1331,43 @@ function hideArenaResultModal() {
 }
 
 function updateArenaHud(arena, input) {
-  // Timer
   const min = Math.floor(arena.timeLeft / 60);
   const sec = Math.floor(arena.timeLeft % 60).toString().padStart(2, '0');
   $("#arena-hud-timer").textContent = min + ":" + sec;
   
-  // Scores
   $("#arena-p1-score").textContent = "P1: " + arena.p1Score;
   $("#arena-p2-score").textContent = "P2: " + arena.p2Score;
   
-  // Player 1 HP
-  const hpPct = Math.max(0, Math.min(1, arena.player1.hp / arena.player1.maxHp));
+  if (!arena.player1) return;
+  const hpPct = Math.max(0, Math.min(1, (arena.player1.hp || 0) / (arena.player1.maxHp || 1)));
   const hpBar = $("#arena-hud-hp");
-  hpBar.style.width = (hpPct * 100) + "%";
-  hpBar.parentElement.classList.toggle("low", hpPct < 0.35);
-  $("#arena-hud-hp-text").textContent = String(Math.round(arena.player1.hp));
+  if (hpBar) {
+    hpBar.style.width = (hpPct * 100) + "%";
+    if (hpBar.parentElement) hpBar.parentElement.classList.toggle("low", hpPct < 0.35);
+  }
+  const hpText = $("#arena-hud-hp-text");
+  if (hpText) hpText.textContent = String(Math.round(arena.player1.hp || 0));
   
-  // Stats chips
   const chips = [
     { label: "Ordem", value: arena.player1.controller?.order?.kind || "-" }
   ];
-  $("#arena-hud-stats").innerHTML = chips
-    .map(function(c) { return '<span class="stat-chip">' + c.label + '<b>' + c.value + '</b></span>'; })
-    .join("");
+  const statsEl = $("#arena-hud-stats");
+  if (statsEl) {
+    statsEl.innerHTML = chips
+      .map(function(c) { return '<span class="stat-chip">' + c.label + '<b>' + c.value + '</b></span>'; })
+      .join("");
+  }
   
-  // Update abilities cooldown display
-  updateAbilitiesCooldowns(arena.player1, "#arena-hud-abilities");
+  if (arena.abilitiesEnabled) {
+    updateAbilitiesCooldowns(arena.player1, "#arena-hud-abilities");
+  }
   
-  // Update powerup HUD for player 1
+  if (!updateArenaHud._attributesInited) {
+    renderAttributesHud(arena.player1, "#arena-hud-attributes");
+    updateArenaHud._attributesInited = true;
+  }
+  updateAttributesHud(arena.player1, "#arena-hud-attributes");
+  
   updatePowerupHud(arena, "p1", "#arena-hud-powerups");
 }
 
@@ -1263,7 +1406,6 @@ function renderAbilitiesHud(player, containerSelector) {
     '</div>';
   }).join("");
   
-  // Apply spell backgrounds
   spells.forEach(function(spell) {
     const slot = container.querySelector('[data-slot="' + spell.slot + '"]');
     if (slot) {
@@ -1297,6 +1439,90 @@ function updateAbilitiesCooldowns(player, containerSelector) {
       }
     }
   }
+}
+
+function renderAttributesHud(player, containerSelector) {
+  const container = $(containerSelector);
+  if (!container) return;
+  
+  const s = player.data?.stats || {};
+  const mult = player.multipliers || {};
+  const buffAtkSpd = player.buffAttackSpeed || 1;
+  const buffMovSpd = player.buffMoveSpeed || 1;
+  
+  const attrs = [
+    { key: 'health', icon: '❤️', label: 'Vida', value: Math.round((s.health || 0) * (mult.health || 1)), base: s.health },
+    { key: 'attackDamage', icon: '⚔️', label: 'Dano', value: Math.round((s.attackDamage || 0) * (mult.attackDamage || 1)), base: s.attackDamage },
+    { key: 'attackRange', icon: '🎯', label: 'Alcance', value: Math.round((s.attackRange || 0) * (mult.attackRange || 1)), base: s.attackRange },
+    { key: 'attackSpeed', icon: '🏹', label: 'AA/s', value: ((1 / (s.attackPeriod || 0.625)) * (mult.attackSpeed || 1) * (player.buffAttackSpeed || 1)).toFixed(2), base: 1 / (s.attackPeriod || 0.625) },
+    { key: 'attackCastTime', icon: '⏱️', label: 'Windup', value: ((s.attackCastTime || 0.3) * (mult.attackCastTime || 1) * 1000).toFixed(0) + 'ms', base: s.attackCastTime * 1000 },
+    { key: 'movementSpeed', icon: '👟', label: 'Vel. Mov', value: Math.round((s.movementSpeed || 0) * (mult.movementSpeed || 1) * (player.buffMoveSpeed || 1)), base: s.movementSpeed },
+    { key: 'projectileSpeed', icon: '🚀', label: 'Vel. Proj', value: Math.round((s.projectileSpeed || 0) * (mult.projectileSpeed || 1)), base: s.projectileSpeed },
+    { key: 'armor', icon: '🛡️', label: 'Armadura', value: Math.round((s.armor || 0) * (mult.armor || 1)), base: s.armor },
+    { key: 'magicResistance', icon: '🔮', label: 'Res. Mág', value: Math.round((s.magicResistance || 0) * (mult.magicResistance || 1)), base: s.magicResistance },
+  ];
+  
+  container.innerHTML = attrs.map(function(a) {
+    const multVal = a.base > 0 ? (a.value / a.base) : 1;
+    const pct = Math.round((multVal - 1) * 100);
+    let tone = 'neutral';
+    if (pct > 0) tone = 'positive';
+    else if (pct < 0) tone = 'negative';
+    return '<div class="attr-item" title="' + a.label + ': ' + a.value + ' (' + (pct >= 0 ? '+' : '') + pct + '%)">' +
+      '<span class="attr-icon">' + a.icon + '</span>' +
+      '<span class="attr-value ' + tone + '">' + a.value + '</span>' +
+      '<span class="attr-pct ' + tone + '">(' + (pct >= 0 ? '+' : '') + pct + '%)</span>' +
+    '</div>';
+  }).join('');
+}
+
+function updateAttributesHud(player, containerSelector) {
+  const container = $(containerSelector);
+  if (!container) return;
+  
+  const items = container.querySelectorAll('.attr-item');
+  if (items.length === 0) return;
+  
+  const s = player.data?.stats || {};
+  const mult = player.multipliers || {};
+  const buffAtkSpd = player.buffAttackSpeed || 1;
+  const buffMovSpd = player.buffMoveSpeed || 1;
+  
+  const attrs = [
+    { key: 'health', value: Math.round((s.health || 0) * (mult.health || 1)) },
+    { key: 'attackDamage', value: Math.round((s.attackDamage || 0) * (mult.attackDamage || 1)) },
+    { key: 'attackRange', value: Math.round((s.attackRange || 0) * (mult.attackRange || 1)) },
+    { key: 'attackSpeed', value: ((1 / (s.attackPeriod || 0.625)) * (mult.attackSpeed || 1) * (player.buffAttackSpeed || 1)).toFixed(2) },
+    { key: 'attackCastTime', value: ((s.attackCastTime || 0.3) * (mult.attackCastTime || 1) * 1000).toFixed(0) + 'ms' },
+    { key: 'movementSpeed', value: Math.round((s.movementSpeed || 0) * (mult.movementSpeed || 1) * (player.buffMoveSpeed || 1)) },
+    { key: 'projectileSpeed', value: Math.round((s.projectileSpeed || 0) * (mult.projectileSpeed || 1)) },
+    { key: 'armor', value: Math.round((s.armor || 0) * (mult.armor || 1)) },
+    { key: 'magicResistance', value: Math.round((s.magicResistance || 0) * (mult.magicResistance || 1)) },
+  ];
+  
+  attrs.forEach(function(a, i) {
+    const item = items[i];
+    if (!item) return;
+    const valueEl = item.querySelector('.attr-value');
+    let base;
+    if (a.key === 'attackSpeed') {
+      base = 1 / (s.attackPeriod || 0.625);
+    } else {
+      base = s[Object.keys(s).find(k => k === a.key)] || 1;
+    }
+    const multVal = base > 0 ? (a.value / base) : 1;
+    const pct = Math.round((multVal - 1) * 100);
+    let tone = 'neutral';
+    if (pct > 0) tone = 'positive';
+    else if (pct < 0) tone = 'negative';
+    if (valueEl) {
+      valueEl.textContent = a.value + ' ';
+      const small = document.createElement('small');
+      small.textContent = '(' + (pct >= 0 ? '+' : '') + pct + '%)';
+      valueEl.innerHTML = a.value + ' ' + small.outerHTML;
+      valueEl.className = 'attr-value ' + tone;
+    }
+  });
 }
 
 boot();

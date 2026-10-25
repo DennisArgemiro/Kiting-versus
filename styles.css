@@ -374,7 +374,7 @@ kbd {
   width: 100%; min-height: 260px; margin-top: 14px; resize: vertical;
   background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
   border-radius: 8px; padding: 10px 12px; font-family: var(--mono); font-size: 12px;
-  line-height: 1.5; tab-size: 2;
+  line-height: 1.5; tab-size: 2.
 }
 .admin-json:focus { outline: 2px solid var(--accent-dim); outline-offset: 1px; }
 
@@ -396,6 +396,47 @@ kbd {
   #screen-admin { padding: 10px; }
   .admin-head, .admin-body, .admin-foot, .admin-tabs { padding-left: 16px; padding-right: 16px; }
 }
+
+/* ───────────────────────── admin login ───────────────────────── */
+#screen-admin-login { align-items: center; justify-content: center; padding: 24px; overflow: auto; }
+
+.login-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 32px 36px; width: min(420px, 100%); box-shadow: var(--shadow);
+}
+
+.login-header { margin-bottom: 24px; text-align: center; }
+
+.login-brand { display: flex; align-items: center; justify-content: center; gap: 13px; margin-bottom: 8px; }
+.login-brand .brand-mark {
+  width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center;
+  font-weight: 800; letter-spacing: 0.5px; font-size: 17px;
+  background: linear-gradient(140deg, var(--accent), #6f4fd8);
+  box-shadow: 0 6px 18px rgba(78, 161, 255, 0.3);
+}
+.login-brand h1 { margin: 0; font-size: 22px; letter-spacing: 0.2px; }
+.login-brand h1 em { font-style: normal; color: var(--accent); }
+.login-brand .brand-sub { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+
+.login-form { display: flex; flex-direction: column; gap: 16px; }
+
+.login-form .field { display: flex; flex-direction: column; gap: 6px; }
+.login-form .field label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: none; }
+.login-form input[type="password"] {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 12px 14px; font: inherit; font-size: 15px;
+}
+.login-form input[type="password"]:focus { outline: 2px solid var(--accent-dim); outline-offset: 1px; }
+
+.login-error {
+  min-height: 20px; font-size: 13px; color: var(--bad);
+  text-align: center; opacity: 0; transition: opacity 0.2s;
+}
+.login-error.visible { opacity: 1; }
+
+.btn-block { width: 100%; padding: 12px 16px; font-size: 15px; margin-top: 4px; }
+
+.login-footer { margin-top: 20px; text-align: center; }
 
 
 /* ───────────────────────── abilities HUD ───────────────────────── */
@@ -423,6 +464,31 @@ kbd {
 }
 .ability-slot .key-hint.p { display: none; }
 
+/* ───────────────────────── attributes HUD ───────────────────────── */
+.hud-attributes {
+  position: absolute; bottom: 80px; left: 14px;
+  display: grid; grid-template-columns: repeat(2, auto); gap: 8px 12px; pointer-events: none; z-index: 10;
+}
+.attr-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: rgba(11,14,19,0.92); border: 1px solid var(--line);
+  border-radius: 10px; padding: 8px 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  min-width: 70px;
+}
+.attr-icon { font-size: 20px; line-height: 1; }
+.attr-label { display: none; }
+.attr-value { font: 700 14px var(--mono); color: var(--text); }
+.attr-value.positive { color: #46d39a; }
+.attr-value.negative { color: #ff5f6d; }
+.attr-value.neutral { color: var(--accent); }
+.attr-pct { font: 500 9px var(--mono); opacity: 0.7; }
+
+/* Arena version - right side */
+#arena-hud-attributes {
+  left: auto; right: 14px;
+}
+
 /* ───────────────────────── arena setup ───────────────────────── */
 #screen-arena-setup { align-items: center; justify-content: center; padding: 24px; overflow: auto; }
 .arena-setup-card {
@@ -435,7 +501,7 @@ kbd {
 .arena-option p { margin: 0 0 16px; font-size: 13px; color: var(--muted); }
 .arena-option .field { margin-bottom: 12px; }
 .arena-divider { text-align: center; color: var(--muted-2); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
-.arena-powerups-toggle { display: flex; justify-content: center; }
+.arena-options { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .checkbox-wrap { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .checkbox-wrap input { width: 16px; height: 16px; accent-color: var(--accent); }
 
@@ -448,6 +514,7 @@ kbd {
 .player-score.p1 { border-color: rgba(78,161,255,0.5); }
 .player-score.p2 { border-color: rgba(255,180,84,0.5); }
 
+#screen-arena .stage { flex: 1; position: relative; min-height: 0; overflow: hidden; }
 #arena-game-stage {
   position: absolute; inset: 14px;
   border-radius: 12px; overflow: hidden;
@@ -479,7 +546,7 @@ kbd {
   position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
   background: rgba(0,0,0,0.9); padding: 6px 10px; border-radius: 6px;
   font-size: 11px; white-space: nowrap; pointer-events: none; opacity: 0;
-  transition: opacity 0.15s; margin-bottom: 6px;
+  transition: opacity 0.15s; margin-bottom: 6px.
 }
 .powerup:hover .powerup-tooltip { opacity: 1; }
 
@@ -488,7 +555,7 @@ kbd {
   position: absolute; top: 26px; left: 50%; transform: translateX(-50%);
   padding: 9px 20px; border-radius: 999px; background: rgba(11, 14, 19, 0.92);
   border: 1px solid var(--line); font-weight: 600; font-size: 13.5px; opacity: 0;
-  transition: opacity .25s; pointer-events: none; white-space: nowrap;
+  transition: opacity .25s; pointer-events: none; white-space: nowrap.
 }
 #arena-banner.is-on { opacity: 1; }
 #arena-banner.good { border-color: rgba(70,211,154,.5); color: #8ce6c1; }
@@ -540,7 +607,7 @@ kbd {
   background: conic-gradient(from -90deg, var(--powerup-color) var(--progress), transparent 0);
   -webkit-mask: radial-gradient(circle closest-side, transparent 60%, black 61%);
   mask: radial-gradient(circle closest-side, transparent 60%, black 61%);
-  pointer-events: none;
+  pointer-events: none.
 }
 .powerup-hud-item .timer-text {
   position: absolute; bottom: 2px; left: 0; right: 0;
@@ -551,22 +618,22 @@ kbd {
 /* ───────────────────────── powerup 3D models ───────────────────────── */
 .powerup-model {
   position: absolute; width: 48px; height: 48px;
-  transform-style: preserve-3d; cursor: pointer; z-index: 5;
+  transform-style: preserve-3d; cursor: pointer; z-index: 5.
 }
 .powerup-model .core {
   width: 100%; height: 100%; border-radius: 50%;
   background: var(--powerup-color);
   box-shadow: 0 0 20px var(--powerup-color), inset 0 0 10px rgba(255,255,255,0.3);
-  animation: powerup-float 2s ease-in-out infinite, powerup-rotate 4s linear infinite;
+  animation: powerup-float 2s ease-in-out infinite, powerup-rotate 4s linear infinite.
 }
 .powerup-model .ring {
   position: absolute; inset: -8px; border: 2px solid var(--powerup-color);
   border-radius: 50%; opacity: 0.6;
-  animation: powerup-pulse 1.5s ease-in-out infinite;
+  animation: powerup-pulse 1.5s ease-in-out infinite.
 }
 .powerup-model .icon {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  font-size: 24px; text-shadow: 0 2px 6px rgba(0,0,0,0.8); pointer-events: none;
+  font-size: 24px; text-shadow: 0 2px 6px rgba(0,0,0,0.8); pointer-events: none.
 }
 
 @keyframes powerup-float {
@@ -586,7 +653,7 @@ kbd {
 #screen-arena-lobby { align-items: center; justify-content: center; padding: 24px; overflow: auto; }
 .lobby-card {
   background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
-  padding: 32px 40px; width: min(480px, 100%); box-shadow: var(--shadow); text-align: center;
+  padding: 32px 40px; width: min(480px, 100%); box-shadow: var(--shadow); text-align: center.
 }
 .lobby-card h2 { margin: 0 0 8px; font-size: 24px; }
 .lobby-status { font-size: 14px; color: var(--muted); margin-bottom: 20px; }

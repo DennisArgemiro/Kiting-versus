@@ -108,6 +108,9 @@
     <!-- Abilities HUD -->
     <div class="hud-abilities" id="hud-abilities"></div>
 
+    <!-- Attributes HUD -->
+    <div class="hud-attributes" id="hud-attributes"></div>
+
     <div class="stage">
       <div id="game-stage"></div>
       <div id="drill-banner" class="banner"></div>
@@ -186,11 +189,14 @@
             Aguardando outro jogador conectar...
           </div>
         </div>
-        </div>
-        <div class="arena-powerups-toggle">
+        <div class="arena-options">
           <label class="checkbox-wrap">
             <input type="checkbox" id="arena-powerups-enabled" checked>
             <span>Power-ups ativados</span>
+          </label>
+          <label class="checkbox-wrap">
+            <input type="checkbox" id="arena-abilities-enabled" checked>
+            <span>Habilidades ativadas (Q/W/E/R)</span>
           </label>
         </div>
       </div>
@@ -226,6 +232,9 @@
 
     <div class="hud-abilities" id="arena-hud-abilities"></div>
     <div class="hud-powerups" id="arena-hud-powerups"></div>
+
+    <!-- Attributes HUD -->
+    <div class="hud-attributes" id="arena-hud-attributes"></div>
 
     <div class="stage">
       <div id="arena-game-stage"></div>
@@ -265,6 +274,33 @@
       <button id="stats-reset" class="btn btn-danger btn-sm" type="button">Apagar todo o progresso</button>
     </div>
   </section>
+
+  <!-- ══════════════════════ ADMIN LOGIN ══════════════════════ -->
+  <section id="screen-admin-login" class="screen">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-brand">
+          <span class="brand-mark">SG</span>
+          <div>
+            <h1>SkillGap <em>Admin</em></h1>
+            <p class="brand-sub">Acesso restrito à configuração</p>
+          </div>
+        </div>
+      </div>
+      <form id="admin-login-form" class="login-form">
+        <div class="field">
+          <label for="admin-password">Senha de administrador</label>
+          <input type="password" id="admin-password" name="password" autocomplete="current-password" placeholder="Digite a senha" required />
+        </div>
+        <div id="login-error" class="login-error" role="alert"></div>
+        <button type="submit" class="btn btn-primary btn-block">Entrar</button>
+      </form>
+      <div class="login-footer">
+        <button id="login-back" class="btn btn-ghost btn-sm" type="button">← Voltar ao menu</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ══════════════════════ ADMIN ══════════════════════ -->
   <section id="screen-admin" class="screen">
     <div class="admin-wrap">
@@ -306,7 +342,7 @@
       <div class="modal-body">
         <div class="modal-score">0 x 0</div>
         <div class="modal-champions">—</div>
-        <div class="modal-duration">—</div>
+        < <div class="modal-duration">—</div>
       </div>
       <div class="modal-actions">
         <button class="modal-rematch btn btn-primary" type="button">Revanche</button>
