@@ -59,6 +59,11 @@ export class World {
     return unit;
   }
 
+  remove(unit) {
+    const idx = this.units.indexOf(unit);
+    if (idx >= 0) this.units.splice(idx, 1);
+  }
+
   addSkillshot(shot) {
     this.skillshots.push(shot);
     return shot;
@@ -98,7 +103,7 @@ export class World {
     let best = null;
     let bestDist = maxRange;
     for (const unit of this.units) {
-      if (!unit.alive) continue;
+      if (!unit || !unit.alive) continue;
       if (filter && !filter(unit)) continue;
       const d = Math.hypot(unit.x - x, unit.y - y);
       if (d < bestDist) {
@@ -113,22 +118,29 @@ export class World {
     this.time += dt;
 
     for (const shot of this.skillshots) {
+      if (!shot) continue;
       const outcome = shot.update(dt, this.units, (unit, source) => this.onSkillshotHit(unit, source));
-      if (outcome) this.onSkillshotResolved?.(shot, outcome);
+      if (outcome) try { this.onSkillshotResolved?.(shot, outcome); } catch {}
     }
-    this.skillshots = this.skillshots.filter((s) => !s.dead);
+    this.skillshots = this.skillshots.filter((s) => s && !s.dead);
 
     for (const proj of this.projectiles) {
+      if (!proj) continue;
       proj.update(dt, this.units, (unit, source) => this.onProjectileHit(unit, source));
     }
-    this.projectiles = this.projectiles.filter((p) => !p.dead);
+    this.projectiles = this.projectiles.filter((p) => p && !p.dead);
 
     // Check for unit deaths
     for (const unit of this.units) {
+      if (!unit) continue;
       if (unit.deadChecked) continue;
       if (!unit.alive) {
         unit.deadChecked = true;
-        this.onDeath?.(unit, unit.lastDamageFrom);
+        try {
+          this.onDeath?.(unit, unit.lastDamageFrom);
+        } catch (e) {
+          console.error('onDeath error', e);
+        }
       }
     }
 
@@ -140,23 +152,25 @@ export class World {
   }
 
   onSkillshotHit(unit, shot) {
+    if (!unit || !shot) return;
     unit.takeDamage(shot.damage, this.time, shot.owner);
     this.effect("text", unit.x, unit.y - unit.radius, {
       text: `-${Math.round(shot.damage)}`,
       color: "#ff7b86",
       duration: 0.9,
     });
-    this.onDamage?.(unit, shot.damage, shot);
+    try { this.onDamage?.(unit, shot.damage, shot.owner || shot); } catch {}
   }
 
   onProjectileHit(unit, proj) {
+    if (!unit || !proj) return;
     unit.takeDamage(proj.damage, this.time, proj.owner);
     this.effect("text", unit.x, unit.y - unit.radius, {
       text: `-${Math.round(proj.damage)}`,
       color: "#ffd27a",
       duration: 0.8,
     });
-    this.onDamage?.(unit, proj.damage, proj);
+    try { this.onDamage?.(unit, proj.damage, proj.owner || proj); } catch {}
   }
 
   /** Keep every unit inside the arena. */

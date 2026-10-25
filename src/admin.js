@@ -12,7 +12,9 @@ const TABS = [
   { id: "map", label: "Mapa" },
   { id: "champions", label: "Campeões" },
   { id: "enemies", label: "Inimigos" },
+  { id: "arena", label: "Arena" },
   { id: "drills", label: "Treinos" },
+  { id: "modos", label: "Modos" },
   { id: "skillgap", label: "Dados REA" },
 ];
 
@@ -263,133 +265,167 @@ export function createAdmin({ app, onApply }) {
 
   function championPanel() {
     const root = document.createDocumentFragment();
-    const raw = (app.rawChampions || []).find((c) => c.alias === view.champion) || app.rawChampions?.[0];
-    const live = app.champions.find((c) => c.alias === (raw?.alias ?? view.champion)) || app.champions[0];
-    const alias = live?.alias ?? "";
-    const override = config.champion(alias) || {};
-    const isCustom = Object.keys(override).length > 0;
+    try {
+      if (!app.champions || app.champions.length === 0) {
+        const empty = section("Campeões", "Nenhum campeão carregado. Recarregue a página.");
+        root.appendChild(empty);
+        return root;
+      }
+      const raw = (app.rawChampions || []).find((c) => c.alias === view.champion) || app.rawChampions?.[0];
+      const live = app.champions.find((c) => c.alias === (raw?.alias ?? view.champion)) || app.champions[0];
+      const alias = live?.alias ?? "";
+      const override = config.champion(alias) || {};
+      const isCustom = Object.keys(override).length > 0;
 
-    const head = document.createElement("div");
-    head.className = "admin-toolbar";
-    const select = document.createElement("select");
-    select.id = "admin-champion";
-    select.className = "admin-select";
-    for (const champion of app.champions) {
-      const option = document.createElement("option");
-      option.value = champion.alias;
-      option.textContent = champion.name;
-      select.appendChild(option);
-    }
-    select.value = alias;
-    select.addEventListener("change", () => {
-      view.champion = select.value;
-      render();
-    });
-
-    const badge = document.createElement("span");
-    badge.className = `badge ${isCustom ? "custom" : ""}`;
-    badge.textContent = isCustom ? "Personalizado" : "Padrão do campeão";
-    head.append(select, badge);
-
-    const info = document.createElement("div");
-    info.className = "admin-actions";
-    info.append(
-      resetButton("Voltar este campeão ao padrão", () => config.clearChampion(alias)),
-    );
-
-    const stats = section(
-      "Atributos",
-      "Deixe um campo vazio para usar o valor original. O windup é o tempo em que você fica parado ao atacar.",
-    );
-
-    const stat = (key) => number(override[key]);
-
-    // A field commits a single stat; clearing it removes only that override.
-    const champField = (key, opts) =>
-      numeric({
-        ...opts,
-        value: stat(key),
-        placeholder: raw?.stats[key],
-        onSet: (v) =>
-          v === null
-            ? config.clearChampionField(alias, key)
-            : config.setChampion(alias, { [key]: v }),
-        after: () => refresh(),
+      const head = document.createElement("div");
+      head.className = "admin-toolbar";
+      const select = document.createElement("select");
+      select.id = "admin-champion";
+      select.className = "admin-select";
+      for (const champion of app.champions) {
+        const option = document.createElement("option");
+        option.value = champion.alias;
+        option.textContent = champion.name;
+        select.appendChild(option);
+      }
+      select.value = alias;
+      select.addEventListener("change", () => {
+        view.champion = select.value;
+        render();
       });
 
-    const grid = fieldGrid(
-      champField("health", { label: "Vida", min: 1, max: 20000, step: 10 }),
-      champField("attackDamage", { label: "Dano de ataque", min: 1, max: 3000, step: 1 }),
-      champField("attackRange", {
-        label: "Alcance de ataque", unit: "unidades", min: 0, max: 1600, step: 25,
-      }),
-      champField("attackSpeed", {
-        label: "Velocidade de ataque", unit: "atk/s", min: 0.2, max: 5, step: 0.01,
-      }),
-      numeric({
-        label: "Windup", unit: "ms", min: 0, max: 1000, step: 10,
-        value: number(override.attackCastTime) === null ? null : Math.round(override.attackCastTime * 1000),
-        placeholder: raw ? Math.round(raw.stats.attackCastTime * 1000) : null,
-        onSet: (v) =>
-          v === null
-            ? config.clearChampionField(alias, "attackCastTime")
-            : config.setChampion(alias, { attackCastTime: v / 1000 }),
-        after: () => refresh(),
-      }),
-      champField("movementSpeed", {
-        label: "Vel. de movimento", unit: "un/s", min: 100, max: 1200, step: 5,
-      }),
-      champField("projectileSpeed", {
-        label: "Vel. do projétil", unit: "un/s", min: 200, max: 6000, step: 50,
-      }),
-      champField("armor", { label: "Armadura", min: 0, max: 400, step: 1 }),
-    );
-    stats.appendChild(grid);
+      const badge = document.createElement("span");
+      badge.className = `badge ${isCustom ? "custom" : ""}`;
+      badge.textContent = isCustom ? "Personalizado" : "Padrão do campeão";
+      head.append(select, badge);
 
-    const typeRow = document.createElement("div");
-    typeRow.className = "admin-inline";
-    const typeLabel = document.createElement("span");
-    typeLabel.className = "admin-field-label";
-    typeLabel.textContent = "Tipo de ataque";
-    const typeSelect = document.createElement("select");
-    typeSelect.className = "admin-select";
-    for (const [value, label] of [["", "Padrão"], ["ranged", "À distância"], ["melee", "Corpo a corpo"]]) {
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = label;
-      typeSelect.appendChild(option);
-    }
-    typeSelect.value = typeof override.isMelee === "boolean" ? (override.isMelee ? "melee" : "ranged") : "";
-    typeSelect.addEventListener("change", () => {
-      const value = typeSelect.value;
-      commit(() => {
-        if (value === "") config.clearChampionField(alias, "isMelee");
-        else config.setChampion(alias, { isMelee: value === "melee" });
+      const info = document.createElement("div");
+      info.className = "admin-actions";
+      info.append(
+        resetButton("Voltar este campeão ao padrão", () => config.clearChampion(alias)),
+      );
+
+      const stats = section(
+        "Atributos (Multiplicadores %)",
+        "Valores em porcentagem: 1.00 = valor original do campeão. 1.20 = +20%. Deixe vazio para usar o valor original.",
+      );
+
+      const stat = (key) => number(override[key]);
+
+      // A field commits a single stat multiplier; clearing it removes only that override.
+      // Values are stored as multipliers (1.0 = 100%), but displayed/edited as percentages (0% = no change)
+      const champField = (key, opts) =>
+        numeric({
+          ...opts,
+          value: stat(key) !== null ? Math.round((stat(key) - 1) * 100) : null,
+          placeholder: 0,
+          onSet: (v) =>
+            v === null
+              ? config.clearChampionField(alias, key)
+              : config.setChampion(alias, { [key]: 1 + v / 100 }),
+          after: () => refresh(),
+        });
+
+      const grid = fieldGrid(
+        champField("health", { label: "Vida", min: -90, max: 400, step: 5, unit: "%" }),
+        champField("attackDamage", { label: "Dano de ataque", min: -90, max: 400, step: 5, unit: "%" }),
+        champField("attackRange", { label: "Alcance", min: -50, max: 100, step: 5, unit: "%" }),
+        // Vel. ataque editada diretamente em AA/s (ataques por segundo)
+        numeric({
+          label: "Vel. ataque (AA/s)", min: 0.1, max: 10, step: 0.05, unit: "AA/s",
+          value: raw?.stats ? Math.round(((1 / raw.stats.attackPeriod) * (override.attackSpeed || 1)) * 100) / 100 : null,
+          placeholder: raw?.stats ? Math.round((1 / raw.stats.attackPeriod) * 100) / 100 : null,
+          onSet: (v) =>
+            v === null
+              ? config.clearChampionField(alias, "attackSpeed")
+              : config.setChampion(alias, { attackSpeed: (v || 0) / (1 / (raw?.stats?.attackPeriod || 0.625)) }),
+          after: () => refresh(),
+        }),
+        numeric({
+          label: "Windup", min: -80, max: 200, step: 5, unit: "%",
+          value: stat("attackCastTime") !== null ? Math.round((stat("attackCastTime") - 1) * 100) : null,
+          placeholder: 0,
+          onSet: (v) =>
+            v === null
+              ? config.clearChampionField(alias, "attackCastTime")
+              : config.setChampion(alias, { attackCastTime: 1 + v / 100 }),
+          after: () => refresh(),
+        }),
+        champField("movementSpeed", { label: "Vel. movimento", min: -50, max: 100, step: 5, unit: "%" }),
+        champField("projectileSpeed", { label: "Vel. projétil", min: -50, max: 100, step: 5, unit: "%" }),
+        champField("armor", { label: "Armadura", min: -90, max: 400, step: 5, unit: "%" }),
+        champField("magicResistance", { label: "Res. Mágica", min: -90, max: 400, step: 5, unit: "%" }),
+      );
+      stats.appendChild(grid);
+
+      const typeRow = document.createElement("div");
+      typeRow.className = "admin-inline";
+      const typeLabel = document.createElement("span");
+      typeLabel.className = "admin-field-label";
+      typeLabel.textContent = "Tipo de ataque";
+      const typeSelect = document.createElement("select");
+      typeSelect.className = "admin-select";
+      for (const [value, label] of [["", "Padrão"], ["ranged", "À distância"], ["melee", "Corpo a corpo"]]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        typeSelect.appendChild(option);
+      }
+      typeSelect.value = typeof override.isMelee === "boolean" ? (override.isMelee ? "melee" : "ranged") : "";
+      typeSelect.addEventListener("change", () => {
+        const value = typeSelect.value;
+        commit(() => {
+          if (value === "") config.clearChampionField(alias, "isMelee");
+          else config.setChampion(alias, { isMelee: value === "melee" });
+        });
+        refresh();
       });
+      typeRow.append(typeLabel, typeSelect);
+      stats.appendChild(typeRow);
+
+      // Live read-out so the player sees what the numbers mean in game.
+      const liveBox = document.createElement("div");
+      liveBox.className = "admin-readout";
+
+      /** Recomputes the badge and the read-out without rebuilding the panel. */
+      const refresh = () => {
+        const current = config.champion(alias) || {};
+        const custom = Object.keys(current).length > 0;
+        badge.textContent = custom ? "Personalizado" : "Padrão do campeão";
+        badge.classList.toggle("custom", custom);
+        const baseStats = raw?.stats || {};
+        const mult = config.champion(alias) || {};
+        const effective = {
+          health: Math.round((baseStats.health || 0) * (mult.health || 1)),
+          attackDamage: Math.round((baseStats.attackDamage || 0) * (mult.attackDamage || 1)),
+          attackRange: Math.round((baseStats.attackRange || 0) * (mult.attackRange || 1)),
+          attackSpeed: ((1 / (baseStats.attackPeriod || 0.625)) * (mult.attackSpeed || 1)).toFixed(2),
+          attackCastTime: ((baseStats.attackCastTime || 0.3) * (mult.attackCastTime || 1) * 1000).toFixed(0),
+          movementSpeed: Math.round((baseStats.movementSpeed || 0) * (mult.movementSpeed || 1)),
+          projectileSpeed: Math.round((baseStats.projectileSpeed || 0) * (mult.projectileSpeed || 1)),
+          armor: Math.round((baseStats.armor || 0) * (mult.armor || 1)),
+          magicResistance: Math.round((baseStats.magicResistance || 0) * (mult.magicResistance || 1)),
+        };
+        liveBox.innerHTML = `
+          <div><span>Vida efetiva</span><b>${effective.health}</b></div>
+          <div><span>Dano efetivo</span><b>${effective.attackDamage}</b></div>
+          <div><span>Alcance efetivo</span><b>${effective.attackRange}</b></div>
+          <div><span>AA/s efetiva</span><b>${effective.attackSpeed}</b></div>
+          <div><span>Windup efetivo</span><b>${effective.attackCastTime}ms</b></div>
+          <div><span>Vel. Mov efetiva</span><b>${effective.movementSpeed}</b></div>
+          <div><span>Vel. Proj. efetiva</span><b>${effective.projectileSpeed}</b></div>
+          <div><span>Armadura efetiva</span><b>${effective.armor}</b></div>
+          <div><span>Res. Mágica efetiva</span><b>${effective.magicResistance}</b></div>
+        `;
+      };
       refresh();
-    });
-    typeRow.append(typeLabel, typeSelect);
-    stats.appendChild(typeRow);
-
-    // Live read-out so the player sees what the numbers mean in game.
-    const liveBox = document.createElement("div");
-    liveBox.className = "admin-readout";
-
-    /** Recomputes the badge and the read-out without rebuilding the panel. */
-    const refresh = () => {
-      const current = config.champion(alias) || {};
-      const custom = Object.keys(current).length > 0;
-      badge.textContent = custom ? "Personalizado" : "Padrão do campeão";
-      badge.classList.toggle("custom", custom);
-      const statsNow = (app.champions.find((c) => c.alias === alias) || live).stats;
-      liveBox.innerHTML = `
-        <div><span>DPS teórico</span><b>${(statsNow.attackDamage * statsNow.attackSpeed).toFixed(0)}</b></div>
-        <div><span>Alcance efetivo</span><b>${Math.round(statsNow.attackRange)}</b></div>
-        <div><span>Janela de kite</span><b>${(statsNow.attackPeriod - statsNow.attackCastTime).toFixed(2)}s</b></div>
-      `;
-    };
-    refresh();
-    root.append(head, stats, liveBox, info);
+      root.append(head, stats, liveBox, info);
+    } catch (e) {
+      const errBox = document.createElement("div");
+      errBox.className = "admin-section";
+      errBox.innerHTML = `<h3>Erro no Admin Campeões</h3><p style="color:#ff5f6d">${e.message}</p><p style="font-size:11px;color:#888">${e.stack?.split('\n').slice(0,3).join('<br>')}</p>`;
+      root.appendChild(errBox);
+    }
     return root;
   }
 
@@ -475,6 +511,214 @@ export function createAdmin({ app, onApply }) {
     );
 
     root.append(enemies, player, cameraSection, actions);
+    return root;
+  }
+
+  function arenaPanel() {
+    const arenaSettings = config.state.arenaSettings || DEFAULTS.arenaSettings;
+    const combat = config.combat();
+    const root = document.createDocumentFragment();
+
+    // Player stats readout with icons
+    const liveStats = section("Atributos do Jogador", "Valores atuais do seu campeão (somente leitura).");
+    const liveBox = document.createElement("div");
+    liveBox.className = "admin-stats-readout";
+    
+    // Get the current player champion stats
+    const championAlias = config.state.champions ? Object.keys(config.state.champions)[0] || "Ezreal" : "Ezreal";
+    const champData = app.champions.find(c => c.alias === championAlias) || app.champions[0];
+    const s = champData?.stats || {};
+    
+    liveBox.innerHTML = `
+      <div class="stat-item"><span class="stat-icon" title="Vida">❤️</span><span class="stat-label">Vida</span><span class="stat-value">${Math.round(s.health || 0)}</span></div>
+      <div class="stat-item"><span class="stat-icon" title="Dano de ataque">⚔️</span><span class="stat-label">Dano</span><span class="stat-value">${Math.round(s.attackDamage || 0)}</span></div>
+      <div class="stat-item"><span class="stat-icon" title="Alcance">🎯</span><span class="stat-label">Alcance</span><span class="stat-value">${Math.round(s.attackRange || 0)}</span></div>
+      <div class="stat-item"><span class="stat-icon" title="Velocidade de ataque">🏹</span><span class="stat-label">Vel. Atk</span><span class="stat-value">${(s.attackSpeed || 0).toFixed(3)}</span></div>
+      <div class="stat-item"><span class="stat-icon" title="Windup">⏱️</span><span class="stat-label">Windup</span><span class="stat-value">${(s.attackCastTime * 1000).toFixed(0)}ms</span></div>
+      <div class="stat-item"><span class="stat-icon" title="Velocidade de movimento">👟</span><span class="stat-label">Vel. Mov</span><span class="stat-value">${Math.round(s.movementSpeed || 0)}</span></div>
+      <div class="stat-item"><span class="stat-icon" title="Armadura">🛡️</span><span class="stat-label">Armadura</span><span class="stat-value">${Math.round(s.armor || 0)}</span></div>
+      <div class="stat-item"><span class="stat-icon" title="Resistência mágica">🔮</span><span class="stat-label">Res. Mágica</span><span class="stat-value">${Math.round(s.magicResistance || 0)}</span></div>
+    `;
+    liveStats.appendChild(liveBox);
+    root.appendChild(liveStats);
+
+    // Arena settings
+    const arenaSec = section("Configurações da Arena", "Ajustes globais do modo Arena (vs Bot / Online).");
+    const arenaGrid = fieldGrid(
+      numeric({
+        label: "Pontuação máxima", min: 1, max: 20, step: 1,
+        value: arenaSettings.maxScore, placeholder: DEFAULTS.arenaSettings.maxScore,
+        onSet: (v) => config.patch("arenaSettings", { maxScore: v ?? DEFAULTS.arenaSettings.maxScore }),
+      }),
+      numeric({
+        label: "Duração (segundos)", min: 30, max: 600, step: 10,
+        value: arenaSettings.duration, placeholder: DEFAULTS.arenaSettings.duration,
+        onSet: (v) => config.patch("arenaSettings", { duration: v ?? DEFAULTS.arenaSettings.duration }),
+      }),
+      toggle({
+        label: "Power-ups ativados",
+        hint: "Ativa/desativa o spawn de power-ups na arena.",
+        checked: arenaSettings.powerupsEnabled,
+        onSet: (checked) => config.patch("arenaSettings", { powerupsEnabled: checked }),
+      }),
+      numeric({
+        label: "Intervalo spawn (mín)", min: 5, max: 60, step: 1,
+        value: arenaSettings.powerupSpawnInterval?.min, placeholder: DEFAULTS.arenaSettings.powerupSpawnInterval?.min,
+        onSet: (v) => config.patch("arenaSettings", { powerupSpawnInterval: { ...arenaSettings.powerupSpawnInterval, min: v ?? DEFAULTS.arenaSettings.powerupSpawnInterval.min } }),
+      }),
+      numeric({
+        label: "Intervalo spawn (máx)", min: 10, max: 120, step: 1,
+        value: arenaSettings.powerupSpawnInterval?.max, placeholder: DEFAULTS.arenaSettings.powerupSpawnInterval?.max,
+        onSet: (v) => config.patch("arenaSettings", { powerupSpawnInterval: { ...arenaSettings.powerupSpawnInterval, max: v ?? DEFAULTS.arenaSettings.powerupSpawnInterval.max } }),
+      }),
+      numeric({
+        label: "Máx. power-ups simultâneos", min: 1, max: 6, step: 1,
+        value: arenaSettings.maxPowerups, placeholder: DEFAULTS.arenaSettings.maxPowerups,
+        onSet: (v) => config.patch("arenaSettings", { maxPowerups: v ?? DEFAULTS.arenaSettings.maxPowerups }),
+      }),
+    );
+    arenaSec.appendChild(arenaGrid);
+    root.appendChild(arenaSec);
+
+    // Power-ups configuration
+    const puSec = section("Power-ups", "Configure cada power-up individualmente. Desative os que não quiser.");
+    const puSettings = arenaSettings.powerups || DEFAULTS.arenaSettings.powerups;
+    
+    const puTypes = [
+      { key: 'heal', name: 'Cura', icon: '❤️+', color: '#ff4d6a' },
+      { key: 'atkSpeed', name: 'Vel. Ataque', icon: '🏹↑', color: '#ffb84d' },
+      { key: 'movSpeed', name: 'Vel. Movimento', icon: '👟↑', color: '#4dff88' },
+      { key: 'vamp', name: 'Vampirismo', icon: '⚔️🩸', color: '#d84dff' },
+      { key: 'atkSpeedNerf', name: 'Nerf Vel. Atk (Inimigo)', icon: '🏹↓', color: '#ff4d4d' },
+      { key: 'movSpeedNerf', name: 'Nerf Vel. Mov (Inimigo)', icon: '👟↓', color: '#4d4dff' },
+    ];
+
+    const puGrid = document.createElement("div");
+    puGrid.className = "admin-grid";
+    
+    for (const pu of puTypes) {
+      const puConfig = puSettings[pu.key] || DEFAULTS.arenaSettings.powerups[pu.key];
+      const puSection = document.createElement("div");
+      puSection.className = "admin-pu-section";
+      puSection.style.borderLeftColor = pu.color;
+      
+      let fields;
+      if (pu.key === 'heal') {
+        fields = fieldGrid(
+          toggle({
+            label: `${pu.icon} ${pu.name} (Ativo)`,
+            checked: puConfig.enabled,
+            onSet: (checked) => config.patch("arenaSettings", { powerups: { ...arenaSettings.powerups, [pu.key]: { ...puConfig, enabled: checked } } }),
+          }),
+          numeric({
+            label: "Cura (% vida máx.)", min: 0.05, max: 1, step: 0.05,
+            value: puConfig.hpPercent, placeholder: DEFAULTS.arenaSettings.powerups.heal.hpPercent,
+            onSet: (v) => config.patch("arenaSettings", { powerups: { ...arenaSettings.powerups, [pu.key]: { ...puConfig, hpPercent: v ?? DEFAULTS.arenaSettings.powerups.heal.hpPercent } } }),
+          }),
+        );
+      } else if (pu.key === 'vamp') {
+        fields = fieldGrid(
+          toggle({
+            label: `${pu.icon} ${pu.name} (Ativo)`,
+            checked: puConfig.enabled,
+            onSet: (checked) => config.patch("arenaSettings", { powerups: { ...arenaSettings.powerups, [pu.key]: { ...puConfig, enabled: checked } } }),
+          }),
+          numeric({
+            label: "Vampirismo (%)", min: 0.05, max: 0.5, step: 0.05,
+            value: puConfig.lifesteal, placeholder: DEFAULTS.arenaSettings.powerups.vamp.lifesteal,
+            onSet: (v) => config.patch("arenaSettings", { powerups: { ...arenaSettings.powerups, [pu.key]: { ...puConfig, lifesteal: v ?? DEFAULTS.arenaSettings.powerups.vamp.lifesteal } } }),
+          }),
+          numeric({
+            label: "Duração (s)", min: 1, max: 30, step: 1,
+            value: puConfig.duration, placeholder: DEFAULTS.arenaSettings.powerups.vamp.duration,
+            onSet: (v) => config.patch("arenaSettings", { powerups: { ...arenaSettings.powerups, [pu.key]: { ...puConfig, duration: v ?? DEFAULTS.arenaSettings.powerups.vamp.duration } } }),
+          }),
+        );
+      } else if (pu.key === 'atkSpeedNerf' || pu.key === 'movSpeedNerf') {
+        fields = fieldGrid(
+          toggle({
+            label: `${pu.icon} ${pu.name} (Ativo)`,
+            checked: puConfig.enabled,
+            onSet: (checked) => config.patch("arenaSettings", { powerups: { ...arenaSettings.powerups, [pu.key]: { ...puConfig, enabled: checked } } }),
+          }),
+          numeric({
+            label: "Multiplicador", min: 0.2, max: 1, step: 0.05,
+            value: puConfig.multiplier, placeholder: DEFAULTS.arenaSettings.powerups[pu.key].multiplier,
+            onSet: (v) => config.patch("arenaSettings", { powerups: { ...arenaSettings.powerups, [pu.key]: { ...puConfig, multiplier: v ?? DEFAULTS.arenaSettings.powerups[pu.key].multiplier } } }),
+          }),
+          numeric({
+            label: "Duração (s)", min: 1, max: 30, step: 1,
+            value: puConfig.duration, placeholder: DEFAULTS.arenaSettings.powerups[pu.key].duration,
+            onSet: (v) => config.patch("arenaSettings", { powerups: { ...arenaSettings.powerups, [pu.key]: { ...puConfig, duration: v ?? DEFAULTS.arenaSettings.powerups[pu.key].duration } } }),
+          }),
+        );
+      } else {
+        fields = fieldGrid(
+          toggle({
+            label: `${pu.icon} ${pu.name} (Ativo)`,
+            checked: puConfig.enabled,
+            onSet: (checked) => config.patch("arenaSettings", { powerups: { ...arenaSettings.powerups, [pu.key]: { ...puConfig, enabled: checked } } }),
+          }),
+          numeric({
+            label: "Multiplicador", min: 0.5, max: 3, step: 0.1,
+            value: puConfig.multiplier, placeholder: DEFAULTS.arenaSettings.powerups[pu.key].multiplier,
+            onSet: (v) => config.patch("arenaSettings", { powerups: { ...arenaSettings.powerups, [pu.key]: { ...puConfig, multiplier: v ?? DEFAULTS.arenaSettings.powerups[pu.key].multiplier } } }),
+          }),
+          numeric({
+            label: "Duração (s)", min: 1, max: 30, step: 1,
+            value: puConfig.duration, placeholder: DEFAULTS.arenaSettings.powerups[pu.key].duration,
+            onSet: (v) => config.patch("arenaSettings", { powerups: { ...arenaSettings.powerups, [pu.key]: { ...puConfig, duration: v ?? DEFAULTS.arenaSettings.powerups[pu.key].duration } } }),
+          }),
+        );
+      }
+      
+      puSection.appendChild(fields);
+      puGrid.appendChild(puSection);
+    }
+    
+    const puReset = document.createElement("div");
+    puReset.className = "admin-actions";
+    puReset.appendChild(resetButton("Restaurar power-ups padrão", () => config.patch("arenaSettings", { powerups: { ...DEFAULTS.arenaSettings.powerups } })));
+    
+    puSec.appendChild(puGrid);
+    puSec.appendChild(puReset);
+    root.appendChild(puSec);
+
+    // HP Bar settings
+    const hpSec = section("Barra de Vida", "Ajuste visual da barra de vida na arena.");
+    const hpGrid = fieldGrid(
+      numeric({
+        label: "Altura da barra (px)", min: 8, max: 30, step: 1,
+        value: config.state.arenaSettings?.hpBarHeight || 16,
+        placeholder: 16,
+        onSet: (v) => config.patch("arenaSettings", { hpBarHeight: v ?? 16 }),
+        hint: "Altura da barra de vida acima do personagem.",
+      }),
+      numeric({
+        label: "Largura da barra (px)", min: 40, max: 150, step: 5,
+        value: config.state.arenaSettings?.hpBarWidth || 80,
+        placeholder: 80,
+        onSet: (v) => config.patch("arenaSettings", { hpBarWidth: v ?? 80 }),
+        hint: "Largura da barra de vida acima do personagem.",
+      }),
+      toggle({
+        label: "Usar cor da HUD superior",
+        hint: "Se ativo, usa a mesma cor verde/vermelha da barra de vida do HUD superior.",
+        checked: config.state.arenaSettings?.hpBarUseHudColor !== false,
+        onSet: (checked) => config.patch("arenaSettings", { hpBarUseHudColor: checked }),
+      }),
+    );
+    hpSec.appendChild(hpGrid);
+    root.appendChild(hpSec);
+
+    // Reset button
+    const actions = document.createElement("div");
+    actions.className = "admin-actions";
+    actions.append(
+      resetButton("Restaurar arena padrão", () => config.patch("arenaSettings", { ...DEFAULTS.arenaSettings })),
+    );
+    root.appendChild(actions);
+
     return root;
   }
 
@@ -846,12 +1090,70 @@ export function createAdmin({ app, onApply }) {
     }
   }
 
+  function modosPanel() {
+    const root = document.createDocumentFragment();
+
+    const section = document.createElement("section");
+    section.className = "admin-section";
+
+    const head = document.createElement("div");
+    head.className = "admin-section-head";
+    head.innerHTML = `<h3>Modos de Treino</h3><p>Habilite ou desabilite modos de treino para aparecer no menu principal.</p>`;
+    section.appendChild(head);
+
+    const grid = document.createElement("div");
+    grid.className = "admin-grid";
+
+    const modos = [
+      { id: "kiting-spacing", label: "Kiting de Separação", default: true },
+      { id: "kiting-defensive", label: "Kiting Defensivo", default: true },
+      { id: "kiting-peel", label: "Peel / Proteção", default: true },
+      { id: "dodge-skillshot", label: "Esquiva de Skillshots", default: true },
+      { id: "dodge-shoot-dodge", label: "Esquiva e Contragolpe", default: true },
+      { id: "kiting-peel", label: "Peel / Proteção", default: true },
+      { id: "kiting-microgame", label: "Kiting — Microgame (REA)", default: true },
+      { id: "kiting-dodge", label: "Kiting + Esquiva (REA)", default: true },
+    ];
+
+    for (const modo of modos) {
+      const current = config.state.modosDrills?.[modo.id] ?? modo.default;
+
+      const wrap = document.createElement("div");
+      wrap.className = "admin-field";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = current;
+      checkbox.addEventListener("change", () => {
+        commit(() => {
+          const modosDrills = { ...(config.state.modosDrills || {}) };
+          modosDrills[modo.id] = checkbox.checked;
+          config.patch("modosDrills", modosDrills);
+        });
+      });
+
+      const label = document.createElement("label");
+      label.textContent = modo.label;
+
+      wrap.appendChild(checkbox);
+      wrap.appendChild(label);
+      grid.appendChild(wrap);
+    }
+
+    section.appendChild(grid);
+    root.appendChild(section);
+
+    return root;
+  }
+
   function render() {
     renderTabs();
     bodyEl.innerHTML = "";
     if (view.tab === "map") bodyEl.appendChild(mapPanel());
     else if (view.tab === "champions") bodyEl.appendChild(championPanel());
     else if (view.tab === "enemies") bodyEl.appendChild(enemyPanel());
+    else if (view.tab === "arena") bodyEl.appendChild(arenaPanel());
+    else if (view.tab === "modos") bodyEl.appendChild(modosPanel());
     else if (view.tab === "skillgap") bodyEl.appendChild(skillgapPanel());
     else bodyEl.appendChild(drillPanel());
   }

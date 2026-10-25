@@ -186,6 +186,11 @@ class KitingDrill {
     if (this.ready > 0) {
       this.ready = Math.max(0, this.ready - dt);
       world.update(dt);
+      if (this.ready <= 0) {
+        for (let i = 0; i < 3; i++) {
+          try { this.spawnDummy(); } catch {}
+        }
+      }
       return;
     }
 
@@ -447,37 +452,326 @@ function verdictFor(score, outcome) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Drill 1 — Kiting de Separação
+// Drill 1 — Kiting de Separação (Dummy de 3 hits)
 // ───────────────────────────────────────────────────────────────────────────
 
-class SpacingKitingDrill extends KitingDrill {
-  spawnEnemies(params) {
-    const roster = params.enemies;
-    const positions = this.placeEnemies(roster.length, params.spread ?? 1);
-    roster.forEach((spec, i) => {
-      const data = resolveChampion(spec, this.ctx);
-      const real = Boolean(spec.stats);
-      const enemy = new Champion(data, {
+// ───────────────────────────────────────────────────────────────────────────
+// Drill 1 — Kiting de Separação (Dummy de 3 hits)
+// ───────────────────────────────────────────────────────────────────────────
+
+class SpacingKitingDrill {
+  constructor({ champion, level, params, rng, champions, onMoveMarker }) {
+    this.world = new World(ARENA);
+    this.rng = rng || makeRng(Date.now());
+    this.params = params;
+    this.ctx = { champion, champions: champions || [champion], level, rng: this.rng };
+    this.onMoveMarker = onMoveMarker;
+    this.duration = params.duration ?? 60;
+    this.timeLeft = this.duration;
+    this.finished = false;
+    this.outcome = "completed";
+    this.ready = 2.4;
+
+    // Calcular nível atual para definir vida dos dummies
+    this.levelNum = (level && level.index) || 1;
+
+    // Vida dos dummies: aumenta até o nível 5 (máx 6 hits), depois volta para 3
+    const dummyHits = this.levelNum >= 1 && this.levelNum <= 5 ? this.levelNum : 3;
+    this.dummyHitsToKill = dummyHits;
+    this.dummyHp = Math.max(1, Math.round((this.player.attackDamage || 60) * dummyHits));
+
+    this.player = makePlayer(champion, ARENA.w * 0.5, ARENA.h * 0.5, 1, 1); // attackSpeedScale = 1 (sem limitação)
+    applyPlayerStats(this.player, params.playerStats, params.playerHpScale ?? 1);
+    this.world.add(this.player);
+
+    // Score system
+    this.score = 0;
+    this.lastPos = { x: this.player.x || 0, y: this.player.y || 0 };
+    this.lastMoveTime = this.world.time;
+    this.cooldownStartTime = 0;
+    this.cooldownPenaltyTime = 0;
+    this.movedDuringCooldown = false;
+
+    // Dummies state (3 hits to kill each, up to 3 at once)
+    this.dummies = [];
+    this.dummyKills = 0;
+
+    // Tempo de vida dos dummies: começa em 10s no nível 1, diminui até o nível 10
+    this.dummyLifeTime = Math.max(2, 10 - (this.levelNum - 1));
+
+    this.world.onDamage = (unit, amount, source) => {
+      // Only dummies can take damage in this drill.
+      if (!unit || !unit.isDummy || !unit.alive) return;
+      unit.hitsTaken = (unit.hitsTaken || 0) + 1;
+      if (unit.hitsTaken >= unit.hitsToKill) {
+        unit.alive = false;
+        try { this.scoreKillingDummy(unit); } catch {}
+      }
+    };
+  }
+
+  spawnDummy() {
+    if (!this.rng || !this.player) return;
+    const angle = this.rng.range(0, Math.PI * 2);
+    const distance = 300;
+    const x = this.player.x + Math.cos(angle) * distance;
+    const y = this.player.y + Math.sin(angle) * distance;
+    if (!isFinite(x) || !isFinite(y)) return;
+
+    const dummyHp = this.dummyHp;
+
+    const dummy = new Champion(
+      { stats: { health: dummyHp, attackDamage: 0, attackRange: 0, movementSpeed: 0, attackPeriod: 0.625, attackCastTime: 0.25, projectileSpeed: 0, armor: 0, magicResistance: 0 } },
+      {
         team: "enemy",
-        x: positions[i].x,
-        y: positions[i].y,
-        // The sparring partner is meant to last the whole drill: this drill
-        // is about the rhythm, not about killing the dummy.
-        hp: spec.hp ?? data.stats.health * 12,
-        attackRange: spec.attackRange,
-      });
-      // The partner stands its ground: the whole point is the attack / step
-      // rhythm, not the chase.
-      enemy.behaviour = "stationary";
-      enemy.attackDamage = data.stats.attackDamage * (spec.damageScale ?? (real ? 1 : 0.4));
-      enemy.attackPeriod = data.stats.attackPeriod * (spec.attackSpeedScale ?? 1);
-      enemy.moveSpeed = spec.moveSpeed ?? data.stats.movementSpeed;
-      tuneEnemy(enemy);
-      this.world.add(enemy);
-      this.enemies.push(enemy);
-      this.metrics.totalEnemyHp += enemy.maxHp;
-      this.metrics.maxEnemyHp += enemy.maxHp;
+        x,
+        y,
+        hp: dummyHp,
+        radius: 40,
+        moveSpeed: 0,
+        attackRange: 0,
+        attackPeriod: 0.625,
+        attackCast: 0.25,
+        attackDamage: 0,
+        projectileSpeed: 0,
+        isMelee: false,
+      }
+    );
+    dummy.name = "Dummy";
+    dummy.behaviour = "stationary";
+    dummy.isDummy = true;
+    dummy.maxHp = dummyHp;
+    dummy.hp = dummyHp;
+    dummy.hitsTaken = 0;
+    dummy.hitsToKill = this.dummyHitsToKill;
+    dummy.spawnTime = this.world.time;
+    dummy.lifeTime = this.dummyLifeTime;
+    this.world.add(dummy);
+    this.dummies.push(dummy);
+
+    this.world.effect("ring", x, y, {
+      color: "#ffb454", radius: 60, grow: 0, duration: 999,
     });
+  }
+
+  scoreKillingDummy(dummy) {
+    if (!dummy || !dummy.isDummy) return;
+    this.score += 50;
+    this.dummyKills += 1;
+    dummy.respawnAt = this.world.time + 1.0;
+  }
+
+  update(dt, input) {
+    input.dt = dt;
+    const world = this.world;
+    const player = this.player;
+    const now = this.world.time;
+
+    if (!player || !world) return;
+
+    if (this.ready > 0) {
+      this.ready = Math.max(0, this.ready - dt);
+      world.update(dt);
+      if (this.ready <= 0) {
+        for (let i = 0; i < 3; i++) {
+          try { this.spawnDummy(); } catch {}
+        }
+      }
+      return;
+    }
+
+    if (!this.finished) {
+      this.timeLeft = Math.max(0, this.timeLeft - dt);
+      if (this.timeLeft <= 0) {
+        this.finished = true;
+        this.outcome = "completed";
+      }
+    }
+
+    // ---- Respawn dead dummies --------------------------------------
+    const deadDummies = this.dummies.filter(d => d && !d.alive);
+    for (const d of deadDummies) {
+      try { world.remove(d); } catch {}
+      this.dummies.splice(this.dummies.indexOf(d), 1);
+    }
+    // Respawn any dead ones
+    const deadCount = this.dummies.filter(d => d && !d.alive).length;
+    // Remove dummies que expirou o tempo de vida
+    for (const d of this.dummies) {
+      if (d && d.alive && d.spawnTime && d.lifeTime) {
+        if (now - d.spawnTime >= d.lifeTime) {
+          d.alive = false;
+          try { world.remove(d); } catch {}
+          const idx = this.dummies.indexOf(d);
+          if (idx >= 0) this.dummies.splice(idx, 1);
+        }
+      }
+    }
+    while (this.dummies.filter(d => d && d.alive).length < 3) {
+      try { this.spawnDummy(); } catch {}
+    }
+
+    // ---- Player input -------------------------------------------------
+    let orders = null;
+    try { orders = applyInput(player, input, world, this.onMoveMarker); } catch {}
+
+    // Track movement (position changed)
+    const moved = Math.hypot(player.x - this.lastPos.x, player.y - this.lastPos.y) > 1;
+    this.lastPos = { x: player.x, y: player.y };
+
+    // Track attack cooldown state
+    const attackTimer = player.attackTimer || 0;
+    const inCooldown = attackTimer > 0;
+
+    // Detect attack landed
+    let resolved = null;
+    try { resolved = player.tickTimers(dt); } catch {}
+    if (resolved) {
+      this.score += 10; // +10 per AA
+      this.movedDuringCooldown = false; // reset for next cooldown cycle
+      this.cooldownStartTime = now;
+      try { resolveAttack(player, world, resolved, null); } catch {}
+    }
+
+    // Detect start of cooldown (when attackTimer goes from 0 to >0)
+    if (attackTimer > 0 && this.cooldownStartTime === 0) {
+      this.cooldownStartTime = now;
+      this.cooldownPenaltyTime = now;
+      this.movedDuringCooldown = false;
+    }
+    if (attackTimer <= 0) {
+      this.cooldownStartTime = 0;
+      this.cooldownPenaltyTime = 0;
+      this.movedDuringCooldown = false;
+    }
+
+    // +10 for moving while AA on cooldown (once per cooldown cycle)
+    if (inCooldown && moved && !this.movedDuringCooldown) {
+      this.score += 10;
+      this.movedDuringCooldown = true;
+    }
+
+    // -1 per 1s that AA is on cooldown and player NOT moving
+    if (inCooldown && !moved) {
+      if (now - this.cooldownPenaltyTime >= 1.0) {
+        this.score -= 1;
+        this.cooldownPenaltyTime = now;
+      }
+    }
+
+    // -2 per 500ms if player is not moving at all
+    if (!moved) {
+      if (now - this.lastMoveTime >= 0.5) {
+        this.score -= 2;
+        this.lastMoveTime = now;
+      }
+    } else {
+      this.lastMoveTime = now;
+    }
+
+    // ---- Tick abilities & controller ----------------------------------
+    for (const slot of ["Q", "W", "E", "R"]) {
+      try {
+        if (input.hit(`Key${slot}`)) {
+          castAbility(player, slot, input.mouse.x, input.mouse.y, world);
+        }
+      } catch {}
+    }
+    try { tickAbilities(player, dt); player.controller.update(dt, world); } catch {}
+
+    // Deactivate attack-move after attack
+    try {
+      if (input.attackMoveActive && player.controller.order.kind === "attackMove") {
+        input.deactivateAttackMove();
+      }
+    } catch {}
+
+    // ---- World update -------------------------------------------------
+    try { world.update(dt); world.separate(); world.clampUnits(); } catch {}
+
+    if (!player.alive && !this.finished) {
+      this.finished = true;
+      this.outcome = "defeated";
+    }
+  }
+
+  render(scene, opts) {
+    if (!scene) return;
+    try {
+      scene.render(this.world, {
+        player: this.player,
+        showRanges: opts.showRanges !== false,
+        attackMoveActive: opts.attackMoveActive,
+        input: opts.input,
+        focusTarget: this.focusTarget(),
+        dt: opts.dt,
+      });
+    } catch {}
+  }
+
+  /** The closest dummy is the focus target. */
+  focusTarget() {
+    let best = null;
+    let bestDist = Infinity;
+    for (const d of this.dummies) {
+      if (d && d.alive) {
+        const dd = Math.hypot(d.x - this.player.x, d.y - this.player.y);
+        if (dd < bestDist) { bestDist = dd; best = d; }
+      }
+    }
+    return best;
+  }
+
+  /** Live coaching. */
+  coach() {
+    const player = this.player;
+    const target = this.focusTarget();
+    if (!target) return "Aguarde o próximo alvo aparecer";
+    if (player.casting > 0) return "Ataque em andamento - recue";
+    const d = Math.hypot(target.x - player.x, target.y - player.y);
+    if (d > player.attackRange * 0.96) {
+      return "Aproxime-se do dummy para atacar";
+    }
+    return "Ataque o dummy e recue antes do próximo swing";
+  }
+
+  hud() {
+    const aliveDummies = this.dummies.filter(d => d && d.alive).length;
+    return [
+      { label: "Pontos", value: Math.max(0, Math.round(this.score)), tone: "good" },
+      { label: "Dummies", value: this.dummyKills },
+      { label: "Ativos", value: `${aliveDummies}/3` },
+    ];
+  }
+
+  result() {
+    const duration = Math.max(this.duration, 1);
+    const score = Math.max(0, Math.round(this.score));
+
+    let verdict = "";
+    if (score >= 300) verdict = "Excelente! Ritmo impecável.";
+    else if (score >= 200) verdict = "Muito bom. Mantenha o movimento.";
+    else if (score >= 100) verdict = "Bom. Tente se mover mais entre ataques.";
+    else if (score >= 50) verdict = "Precisa se movimentar mais entre os ataques.";
+    else verdict = "Você está parado demais. Movimente-se!";
+
+    const params = this.params || {};
+    const dummiesParaPassar = params.dummiesParaPassar || 10;
+
+    return {
+      score,
+      breakdown: [
+        { name: "Pontuação", detail: "Pontos acumulados", value: score / 300, display: score.toString(), color: "#4ea1ff" },
+        { name: "Dummies eliminados", detail: `${this.dummyKills}/${dummiesParaPassar} dummies eliminados`, value: this.dummyKills / dummiesParaPassar, display: this.dummyKills.toString(), color: "#46d39a" },
+      ],
+      verdict,
+      stats: {
+        score,
+        dummyKills: this.dummyKills,
+        duration: Math.round(this.duration - this.timeLeft),
+        dummiesParaPassar,
+      },
+    };
   }
 }
 
@@ -555,6 +849,7 @@ function realSpacingLevels(snapshot) {
         stats: level.enemyStats,
         hp: (level.enemyStats?.health ?? 600) * 12,
       }],
+      dummiesParaPassar: 5 + i * 3,
     },
   }));
 }
@@ -642,14 +937,14 @@ function realPeelLevels(snapshot, champions) {
 
 export function buildKitingDrills(champions, snapshot = null) {
   const fallbackSpacingLevels = [
-    { duration: 45, spread: 0.8, enemies: [{ role: "partner", damageScale: 0.30, attackSpeedScale: 1.45 }] },
-    { duration: 45, spread: 0.8, enemies: [{ role: "partner", damageScale: 0.38, attackSpeedScale: 1.25 }] },
-    { duration: 50, spread: 0.9, enemies: [{ role: "partner", damageScale: 0.42, attackSpeedScale: 1.1 }] },
-    { duration: 50, spread: 0.9, enemies: [{ role: "partner", damageScale: 0.42, attackSpeedScale: 1.1 }, { role: "partner", seed: 1, damageScale: 0.30, attackSpeedScale: 1.3 }] },
-    { duration: 55, spread: 1, enemies: [{ role: "partner", damageScale: 0.48, attackSpeedScale: 1.0 }, { role: "ranged", behaviour: "stationary", damageScale: 0.35, attackSpeedScale: 1.15 }] },
-    { duration: 55, spread: 1, enemies: [{ role: "partner", damageScale: 0.48, attackSpeedScale: 1.0 }, { role: "ranged", behaviour: "stationary", damageScale: 0.35, attackSpeedScale: 1.15 }, { role: "partner", seed: 1, damageScale: 0.32, attackSpeedScale: 1.25 }] },
-    { duration: 60, spread: 1.1, enemies: [{ role: "partner", damageScale: 0.52, attackSpeedScale: 0.95 }, { role: "ranged", behaviour: "stationary", damageScale: 0.4, attackSpeedScale: 1.05 }, { role: "melee", behaviour: "stationary", damageScale: 0.4, attackSpeedScale: 1.15 }] },
-    { duration: 60, spread: 1.1, enemies: [{ role: "partner", damageScale: 0.55, attackSpeedScale: 0.9 }, { role: "ranged", behaviour: "stationary", damageScale: 0.42, attackSpeedScale: 1.0 }, { role: "melee", behaviour: "stationary", damageScale: 0.42, attackSpeedScale: 1.1 }, { role: "partner", seed: 1, damageScale: 0.35, attackSpeedScale: 1.2 }] },
+    { duration: 45, spread: 0.8, enemies: [{ role: "partner", damageScale: 0.30, attackSpeedScale: 1.45 }], dummiesParaPassar: 5 },
+    { duration: 45, spread: 0.8, enemies: [{ role: "partner", damageScale: 0.38, attackSpeedScale: 1.25 }], dummiesParaPassar: 8 },
+    { duration: 50, spread: 0.9, enemies: [{ role: "partner", damageScale: 0.42, attackSpeedScale: 1.1 }], dummiesParaPassar: 12 },
+    { duration: 50, spread: 0.9, enemies: [{ role: "partner", damageScale: 0.42, attackSpeedScale: 1.1 }, { role: "partner", seed: 1, damageScale: 0.30, attackSpeedScale: 1.3 }], dummiesParaPassar: 15 },
+    { duration: 55, spread: 1, enemies: [{ role: "partner", damageScale: 0.48, attackSpeedScale: 1.0 }, { role: "ranged", behaviour: "stationary", damageScale: 0.35, attackSpeedScale: 1.15 }], dummiesParaPassar: 18 },
+    { duration: 55, spread: 1, enemies: [{ role: "partner", damageScale: 0.48, attackSpeedScale: 1.0 }, { role: "ranged", behaviour: "stationary", damageScale: 0.35, attackSpeedScale: 1.15 }, { role: "partner", seed: 1, damageScale: 0.32, attackSpeedScale: 1.25 }], dummiesParaPassar: 20 },
+    { duration: 60, spread: 1.1, enemies: [{ role: "partner", damageScale: 0.52, attackSpeedScale: 0.95 }, { role: "ranged", behaviour: "stationary", damageScale: 0.4, attackSpeedScale: 1.05 }, { role: "melee", behaviour: "stationary", damageScale: 0.4, attackSpeedScale: 1.15 }], dummiesParaPassar: 25 },
+    { duration: 60, spread: 1.1, enemies: [{ role: "partner", damageScale: 0.55, attackSpeedScale: 0.9 }, { role: "ranged", behaviour: "stationary", damageScale: 0.42, attackSpeedScale: 1.0 }, { role: "melee", behaviour: "stationary", damageScale: 0.42, attackSpeedScale: 1.1 }, { role: "partner", seed: 1, damageScale: 0.35, attackSpeedScale: 1.2 }], dummiesParaPassar: 30 },
   ];
 
   const fallbackDefensiveLevels = [
@@ -685,10 +980,10 @@ export function buildKitingDrills(champions, snapshot = null) {
       id: "kiting-spacing",
       name: "Kiting de Separação",
       category: "kiting",
-      tagline: "O ritmo ataque → recuo → ataque",
-      hint: "Acerte quando o alvo estiver no seu anel azul. Saia do anel vermelho assim que o ataque terminar.",
+      tagline: "Dummies de 3 hits - Elimine todos para passar de nível",
+      hint: "Acerte o dummy quando estiver no seu anel azul. Recue logo após o ataque. Cada nível exige mais dummies mortos para passar.",
       description:
-        "Alvo parado que revida quando você entra no anel vermelho. Aprenda a sair do alcance logo depois do auto-atacar e voltar para manter o DPS.",
+        "Destrua dummies que aparecem ao redor de você. Cada nível exige eliminar uma quantidade específica de dummies para avançar. Os dummies somem com o tempo, então seja rápido!",
       unlockScore: 70,
       levels: asLevels(spacingLevels),
       create: (ctx) => new SpacingKitingDrill({ ...ctx, params: ctx.level.params }),

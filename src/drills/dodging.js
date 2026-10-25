@@ -294,6 +294,7 @@ class DodgeDrill {
       player: this.player,
       showRanges: opts.showRanges !== false,
       attackMoveActive: opts.attackMoveActive,
+      input: opts.input,
       focusTarget: this.focusTarget ? this.focusTarget() : null,
       punishTarget: this.punishWindow ? this.punishWindow.enemy : null,
       dt: opts.dt,

@@ -40,7 +40,7 @@ export class Controller {
   }
 
   attackUnit(unit) {
-    if (!unit) return;
+    if (!unit || !unit.alive) return;
     this.order = { kind: ORDER.ATTACK, target: unit };
   }
 
@@ -61,8 +61,11 @@ export class Controller {
     const result = { attacked: null, moved: false, order: this.order.kind };
     this.moving = 0;
 
-    if (!player.alive) {
-      this.order = { kind: ORDER.STOP };
+    if (!player || !player.alive || !world) {
+      if (player) {
+        player.moving = 0;
+        this.order = { kind: ORDER.STOP };
+      }
       return result;
     }
 
@@ -111,8 +114,8 @@ export class Controller {
         const p = this.order.point;
         const d = Math.hypot(p.x - player.x, p.y - player.y);
         // Attack anything reachable on the way.
-        const victim = world.nearest(player.x, player.y, player.attackRange, (u) => u.team !== "player" && u.alive);
-        if (victim) {
+        const victim = world.nearest ? world.nearest(player.x, player.y, player.attackRange * 1.5, (u) => u && u.team !== player.team && u.alive) : null;
+        if (victim && victim.alive) {
           player.faceTowards(victim.x, victim.y);
           if (player.canAttack()) {
             player.startAttack(victim);
@@ -147,7 +150,8 @@ export class Controller {
  */
 export function unitUnderCursor(world, x, y, radius = 120) {
   // Only opponents: the player is never a click target.
-  return world.nearest(x, y, radius, (u) => u.alive && u.team !== "player");
+  if (!world || !world.nearest) return null;
+  return world.nearest(x, y, radius, (u) => u && u.alive && u.team !== "player");
 }
 
 /** Human readable label for the current order, used by the HUD. */

@@ -37,6 +37,22 @@ export const DEFAULTS = {
     attackMoveTargetNearest: true,
     cameraPitch: 55, // degrees from horizontal down to focus point; lower = flatter LoL-style
   },
+  // Arena-specific settings
+  arenaSettings: {
+    maxScore: 5,
+    duration: 180, // seconds
+    powerupsEnabled: true,
+    powerupSpawnInterval: { min: 12, max: 20 },
+    maxPowerups: 3,
+    powerups: {
+      heal: { enabled: true, hpPercent: 0.25 },
+      atkSpeed: { enabled: true, multiplier: 1.2, duration: 5 },
+      movSpeed: { enabled: true, multiplier: 1.3, duration: 5 },
+      vamp: { enabled: true, lifesteal: 0.2, duration: 8 },
+      atkSpeedNerf: { enabled: true, multiplier: 0.8, duration: 5 },
+      movSpeedNerf: { enabled: true, multiplier: 0.7, duration: 5 },
+    },
+  },
   // alias -> partial champion stats
   champions: {},
   // drillId -> partial params (duration, enemyCount, speedScale, ...)

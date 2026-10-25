@@ -3,7 +3,7 @@
  *
  *   right click      move / attack order
  *   left click       selection (used with A for attack-move)
- *   A                toggle attack-move mode (shows range indicator)
+ *   A                hold for attack-move mode (shows range indicator)
  *   S                stop
  *   Q W E R          abilities, aimed with the mouse
  *
@@ -18,8 +18,8 @@ export class Input {
     this.pressed = new Set();
     this.mouse = { x: 0, y: 0 };
     this.clicks = [];
-    this.attackMoveToggled = false; // A key toggles attack-move mode
-    this._cameraLocked = initialCameraLocked; // Y toggles this (backing field for getter/setter)
+    this.consumedAttackMove = false; // set true when attack-move click processed
+    this._cameraLocked = initialCameraLocked;
     this.enabled = true;
     this._bind();
   }
@@ -36,11 +36,6 @@ export class Input {
         try {
           import("../config.js").then(({ config }) => config.patch("combat", { cameraLocked: this._cameraLocked }));
         } catch {}
-        e.preventDefault();
-      }
-      // A toggles attack-move mode
-      if (code === "KeyA") {
-        this.attackMoveToggled = !this.attackMoveToggled;
         e.preventDefault();
       }
       if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(code)) {
@@ -75,8 +70,9 @@ export class Input {
       this.mouse.x = p.x;
       this.mouse.y = p.y;
       this.clicks.push({ button: e.button, x: p.x, y: p.y, shift: e.shiftKey, ctrl: e.ctrlKey });
-      // Do NOT deactivate attack-move on click immediately.
-      // It will be deactivated after the attack happens (in the drill).
+      if (this.keys.has("KeyA")) {
+        this.consumedAttackMove = true;
+      }
       e.preventDefault();
     });
 
@@ -88,7 +84,6 @@ export class Input {
     this.keys.clear();
     this.pressed.clear();
     this.clicks.length = 0;
-    this.attackMoveToggled = false;
     this._cameraLocked = true;
     this.mouse.x = 0;
     this.mouse.y = 0;
@@ -100,14 +95,9 @@ export class Input {
     return codes.some((c) => this.keys.has(c));
   }
 
-  /** Attack-move mode: true when A is toggled on. Deactivated after attack-move attack. */
+  /** Attack-move mode: true while A is held down. */
   get attackMoveActive() {
-    return this.attackMoveToggled;
-  }
-
-  /** Deactivate attack-move mode (called after attack-move attack completes). */
-  deactivateAttackMove() {
-    this.attackMoveToggled = false;
+    return this.keys.has("KeyA");
   }
 
   /** Camera locked to player (Y toggles). */
@@ -122,16 +112,11 @@ export class Input {
   getEdgeScroll() {
     if (this.cameraLocked) return null;
     const rect = this.canvas.getBoundingClientRect();
-    const edge = 24; // pixels from edge to start scrolling
-    let dx = 0, dy = 0;
-    const mx = this.mouse.x; // world x
-    const my = this.mouse.y; // world y
-    // We need screen-space mouse for edge detection
-    // The mouse is stored in world coords; we need to convert back or track client
-    // Instead, let's use the raw client position from the last mousemove
+    const edge = 24;
     if (!this._lastClient) return null;
     const cx = this._lastClient.x;
     const cy = this._lastClient.y;
+    let dx = 0, dy = 0;
     if (cx < edge) dx = -1;
     else if (cx > rect.width - edge) dx = 1;
     if (cy < edge) dy = -1;

@@ -8,6 +8,7 @@
 
 import * as THREE from "../../vendor/three.module.js";
 import { buildChampionModel, animateModel } from "./models.js";
+import { config, DEFAULTS } from "../config.js";
 
 const GROUND_Y = 0;
 
@@ -102,6 +103,7 @@ export class Scene3D {
     this.powerupViews = new Map();
     this.markers = [];
     this.effects = [];
+    this.attackMoveMesh = null;
 
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
@@ -112,7 +114,12 @@ export class Scene3D {
 
   /** Clears everything that belongs to a previous drill. */
   reset() {
-    for (const [, view] of this.unitViews) this.scene.remove(view.model.root);
+    for (const [, view] of this.unitViews) {
+      try {
+        if (view.model?.root) this.scene.remove(view.model.root);
+        if (view.plate) this.scene.remove(view.plate);
+      } catch {}
+    }
     this.unitViews.clear();
     for (const [, view] of this.shotViews) {
       this.scene.remove(view.mesh, view.edge);
@@ -126,8 +133,18 @@ export class Scene3D {
     this.markers.length = 0;
     for (const e of this.effects) this.scene.remove(e.sprite);
     this.effects.length = 0;
-    for (const ring of this.rings?.values() || []) ring.visible = false;
+    if (this.rings) {
+      for (const ring of this.rings.values()) ring.visible = false;
+    } else {
+      this.rings = new Map();
+    }
     if (this.focus) this.focus.visible = false;
+    if (this.attackMoveMesh) {
+      this.scene.remove(this.attackMoveMesh);
+      this.attackMoveMesh.geometry.dispose();
+      this.attackMoveMesh.material.dispose();
+      this.attackMoveMesh = null;
+    }
     this.cameraFocus.set(0, 0, 0);
   }
 
@@ -208,7 +225,8 @@ export class Scene3D {
 
   syncUnits(world) {
     const seen = new Set();
-    for (const unit of world.units) {
+    for (const unit of world.units || []) {
+      if (!unit) continue;
       seen.add(unit.id);
       let view = this.unitViews.get(unit.id);
       if (!view) {
@@ -222,27 +240,35 @@ export class Scene3D {
         model.root.add(blob);
 
         const plate = new THREE.Group();
-        plate.position.y = 215;
+        // Get arena settings for HP bar dimensions
+        const arenaSettings = config?.state?.arenaSettings || DEFAULTS.arenaSettings;
+        const hpBarWidth = arenaSettings.hpBarWidth || 80;
+        const hpBarHeight = arenaSettings.hpBarHeight || 16;
+        const useHudColor = arenaSettings.hpBarUseHudColor !== false;
+        
         const barBg = new THREE.Mesh(
-          new THREE.PlaneGeometry(84, 9),
-          new THREE.MeshBasicMaterial({ color: 0x0b0f16, transparent: true, opacity: 0.85 }),
+          new THREE.PlaneGeometry(hpBarWidth, hpBarHeight),
+          new THREE.MeshBasicMaterial({ color: 0x0b0f16, transparent: true, opacity: 0.85, depthTest: false }),
         );
         const barFill = new THREE.Mesh(
-          new THREE.PlaneGeometry(80, 5),
-          new THREE.MeshBasicMaterial({ color: 0x46d39a }),
+          new THREE.PlaneGeometry(hpBarWidth - 4, hpBarHeight - 4),
+          new THREE.MeshBasicMaterial({ color: 0x46d39a, depthTest: false }),
         );
-        barFill.position.z = 1;
-        const label = this._makeNameSprite(unit.name || "?");
-        label.position.y = 16;
+        barFill.position.z = 0.01;
+        const label = this._makeNameSprite(unit.data?.name || unit.name || "?");
+        label.position.y = hpBarHeight + 8;
         plate.add(barBg, barFill, label);
-        model.root.add(plate);
+        plate.renderOrder = 999;
+        this.scene.add(plate);
 
         this.scene.add(model.root);
         view = { model, blob, plate, barFill, barBg, label, facing: 0 };
         this.unitViews.set(unit.id, view);
       }
-      view.model.root.position.set(unit.x, 0, unit.y);
-      const want = Math.atan2(unit.facing.x, unit.facing.y);
+      view.model.root.position.set(unit.x || 0, 0, unit.y || 0);
+      const fx = unit.facing?.x || 1;
+      const fy = unit.facing?.y || 0;
+      const want = Math.atan2(fx, fy);
       let diff = want - view.facing;
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
@@ -250,10 +276,22 @@ export class Scene3D {
       view.model.root.rotation.y = view.facing;
 
       const pct = Math.max(0, Math.min(1, unit.hp / Math.max(unit.maxHp, 1)));
+      const arenaSettings = config?.state?.arenaSettings || DEFAULTS.arenaSettings;
+      const hpBarWidth = arenaSettings.hpBarWidth || 80;
+      const useHudColor = arenaSettings.hpBarUseHudColor !== false;
+      
       view.barFill.scale.x = Math.max(0.001, pct);
-      view.barFill.position.x = -40 * (1 - pct);
-      view.barFill.material.color.set(pct > 0.4 ? 0x46d39a : 0xff5f6d);
-      view.plate.visible = unit.alive && unit.team !== "player";
+      view.barFill.position.x = -(hpBarWidth / 2 - 2) * (1 - pct);
+      if (useHudColor) {
+        view.barFill.material.color.set(pct > 0.4 ? 0x46d39a : (pct > 0.25 ? 0xffb454 : 0xff5f6d));
+      }
+      view.plate.visible = unit.alive;
+      if (view.plate.visible && this.camera) {
+        view.plate.position.set(unit.x, 215, unit.y);
+        try {
+          view.plate.quaternion.copy(this.camera.quaternion);
+        } catch (e) {}
+      }
 
       animateModel(view.model, unit, this.dt || 0.016, this.worldTime || 0);
       view.blob.visible = unit.alive;
@@ -261,7 +299,10 @@ export class Scene3D {
 
     for (const [id, view] of this.unitViews) {
       if (!seen.has(id)) {
-        this.scene.remove(view.model.root);
+        try {
+          this.scene.remove(view.model.root);
+          if (view.plate) this.scene.remove(view.plate);
+        } catch (e) {}
         this.unitViews.delete(id);
       }
     }
@@ -271,19 +312,29 @@ export class Scene3D {
     if (!this.rings) this.rings = new Map();
     let ring = this.rings.get(key);
     if (!ring) {
+      // Thinner ring (0.975 to 1.025 = 5% of radius)
       ring = new THREE.Mesh(
-        new THREE.RingGeometry(1, 1.02, 72),
+        new THREE.RingGeometry(0.975, 1.025, 64),
         new THREE.MeshBasicMaterial({
           color,
           transparent: true,
           opacity,
           side: THREE.DoubleSide,
           depthWrite: false,
+          depthTest: true,
         }),
       );
       ring.rotation.x = -Math.PI / 2;
-      this.scene.add(ring);
+      ring.position.y = 3; // Above ground
+      ring.renderOrder = 100; // Render on top
+      if (this.scene) this.scene.add(ring);
       this.rings.set(key, ring);
+    } else {
+      if (ring.material) {
+        ring.material.color.set(color);
+        ring.material.opacity = opacity;
+      }
+      ring.position.y = 3;
     }
     return ring;
   }
@@ -332,15 +383,46 @@ export class Scene3D {
     return sprite;
   }
 
-  drawRanges(world, player, showRanges, attackMoveActive = false) {
-    for (const ring of this.rings?.values() || []) ring.visible = false;
-    if (!showRanges && !attackMoveActive) return;
+  drawRanges(world, player, showRanges, attackMoveActive = false, opts = {}) {
+    if (!this.rings) this.rings = new Map();
+    for (const ring of this.rings.values()) {
+      try { ring.visible = false; } catch {}
+    }
 
-    if (player && (showRanges || attackMoveActive)) {
-      const own = this.ensureRing("player", 0x4ea1ff, attackMoveActive ? 0.35 : 0.22);
+    // Player range ring (blue) - only when showRanges is on
+    if (player && player.alive && showRanges) {
+      const own = this.ensureRing("player-attack-range", 0x4ea1ff, 0.45);
       own.visible = true;
-      own.scale.setScalar(player.attackRange);
-      own.position.set(player.x, 3, player.y);
+      own.scale.setScalar(player.attackRange || 550);
+      own.position.set(player.x || 0, 3, player.y || 0);
+    }
+
+    // Attack-move indicator (orange filled circle) - always follows player, visibility controlled by A key
+    if (player && player.alive) {
+      if (!this.attackMoveMesh) {
+        const geo = new THREE.CircleGeometry(player.attackRange || 550, 64);
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0xffb454,
+          transparent: true,
+          opacity: 0.35,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        this.attackMoveMesh = new THREE.Mesh(geo, mat);
+        this.attackMoveMesh.rotation.x = -Math.PI / 2;
+        this.attackMoveMesh.position.y = 1.5;
+        this.scene.add(this.attackMoveMesh);
+      }
+      // Always follow player
+      this.attackMoveMesh.position.set(player.x || 0, 1.5, player.y || 0);
+      // Visible only when A held AND not consumed by click
+      const consumedClick = opts.input?.consumedAttackMove;
+      this.attackMoveMesh.visible = attackMoveActive && !consumedClick;
+    }
+
+    // Reset the consumed flag after using it
+    if (opts.input) {
+      opts.input.consumedAttackMove = false;
     }
 
     if (!showRanges) return;
@@ -500,11 +582,14 @@ export class Scene3D {
   }
 
   syncPowerups(powerups) {
-    if (!powerups || !powerups.length) {
+    if (!powerups || !Array.isArray(powerups) || !powerups.length) {
       for (const [, view] of this.powerupViews) {
-        this.scene.remove(view.mesh);
-        view.mesh.geometry.dispose();
-        view.mesh.material.dispose();
+        try {
+          if (view.ring) { this.scene.remove(view.ring); view.ring.geometry?.dispose(); view.ring.material?.dispose(); }
+          if (view.inner) { this.scene.remove(view.inner); view.inner.geometry?.dispose(); view.inner.material?.dispose(); }
+          if (view.iconSprite) { this.scene.remove(view.iconSprite); view.iconSprite.material?.map?.dispose(); view.iconSprite.material?.dispose(); }
+          if (view.mesh) { this.scene.remove(view.mesh); view.mesh.geometry?.dispose(); view.mesh.material?.dispose(); }
+        } catch {}
       }
       this.powerupViews.clear();
       return;
@@ -512,7 +597,8 @@ export class Scene3D {
 
     const seen = new Set();
     for (const pu of powerups) {
-      const key = `${pu.x.toFixed(0)}:${pu.y.toFixed(0)}:${pu.id}`;
+      if (!pu) continue;
+      const key = `${Math.round(pu.x || 0)}:${Math.round(pu.y || 0)}:${pu.id}`;
       seen.add(key);
       let view = this.powerupViews.get(key);
       if (!view) {
@@ -567,32 +653,43 @@ export class Scene3D {
       }
 
       const time = this.worldTime || 0;
-      view.ring.position.set(pu.x, 8 + Math.sin(time * 3) * 3, pu.y);
-      view.inner.position.set(pu.x, 9 + Math.sin(time * 3 + 0.5) * 2, pu.y);
-      view.iconSprite.position.set(pu.x, 55 + Math.sin(time * 2) * 5, pu.y);
-      view.ring.rotation.z += 0.02;
-      view.inner.rotation.z -= 0.03;
-      view.ring.scale.setScalar(1 + Math.sin(time * 4) * 0.1);
-      view.inner.scale.setScalar(1 + Math.cos(time * 4) * 0.15);
+      if (view.ring) {
+        view.ring.position.set(pu.x || 0, 8 + Math.sin(time * 3) * 3, pu.y || 0);
+        view.ring.rotation.z += 0.02;
+        view.ring.scale.setScalar(1 + Math.sin(time * 4) * 0.1);
+      }
+      if (view.inner) {
+        view.inner.position.set(pu.x || 0, 9 + Math.sin(time * 3 + 0.5) * 2, pu.y || 0);
+        view.inner.rotation.z -= 0.03;
+        view.inner.scale.setScalar(1 + Math.cos(time * 4) * 0.15);
+      }
+      if (view.iconSprite) view.iconSprite.position.set(pu.x || 0, 55 + Math.sin(time * 2) * 5, pu.y || 0);
     }
 
     for (const [key, view] of this.powerupViews) {
       if (!seen.has(key)) {
-        if (view.ring) {
-          this.scene.remove(view.ring);
-          view.ring.geometry.dispose();
-          view.ring.material.dispose();
-        }
-        if (view.inner) {
-          this.scene.remove(view.inner);
-          view.inner.geometry.dispose();
-          view.innerMat.dispose();
-        }
-        if (view.iconSprite) {
-          this.scene.remove(view.iconSprite);
-          view.iconSprite.material.map.dispose();
-          view.iconSprite.material.dispose();
-        }
+        try {
+          if (view.ring) {
+            this.scene.remove(view.ring);
+            view.ring.geometry?.dispose();
+            view.ring.material?.dispose();
+          }
+          if (view.inner) {
+            this.scene.remove(view.inner);
+            view.inner.geometry?.dispose();
+            view.inner.material?.dispose();
+          }
+          if (view.iconSprite) {
+            this.scene.remove(view.iconSprite);
+            view.iconSprite.material?.map?.dispose();
+            view.iconSprite.material?.dispose();
+          }
+          if (view.mesh) {
+            this.scene.remove(view.mesh);
+            view.mesh.geometry?.dispose();
+            view.mesh.material?.dispose();
+          }
+        } catch {}
         this.powerupViews.delete(key);
       }
     }
@@ -604,7 +701,7 @@ export class Scene3D {
     this.worldTime = world.time;
 
     this.syncUnits(world);
-    this.drawRanges(world, opts.player, opts.showRanges !== false);
+    this.drawRanges(world, opts.player, opts.showRanges !== false, opts.attackMoveActive, opts);
     this.syncSkillshots(world);
     this.syncProjectiles(world);
     this.syncEffects(world);
@@ -657,8 +754,8 @@ export class Scene3D {
   }
 
   updateCamera(player, dt, edgeScroll = null) {
-    if (!player) return;
-    const arena = this.arena;
+    if (!player || !this.camera || !this.cameraFocus) return;
+    const arena = this.arena || { x: 0, y: 0, w: 3200, h: 1900 };
 
     if (edgeScroll) {
       const speed = 2200 * dt;

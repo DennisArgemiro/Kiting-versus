@@ -86,22 +86,25 @@ export const POWERUP_TYPES = [
 const ABILITY_COOLDOWNS = { Q: 4, W: 6, E: 8, R: 12 };
 
 export class ArenaMode {
-  constructor({ champion1, champion2, isBot = false, botDifficulty = 'normal', powerupsEnabled = true, rng, onMoveMarker }) {
+  constructor({ champion1, champion2, isBot = false, botDifficulty = 'normal', powerupsEnabled = true, abilitiesEnabled = true, rng, onMoveMarker }) {
     this.world = new World(ARENA);
     this.rng = rng;
     this.isBot = isBot;
     this.botDifficulty = botDifficulty;
     this.powerupsEnabled = powerupsEnabled;
+    this.abilitiesEnabled = abilitiesEnabled;
     this.onMoveMarker = onMoveMarker;
     
     // Players
     this.player1 = makePlayer(champion1, ARENA.w * 0.25, ARENA.h * 0.5, 1);
     this.player1.team = 'p1';
     this.player1.isPlayer = true;
+    this.player1.id = this.player1.id || 'p1';
     this.world.add(this.player1);
     
     this.player2 = makePlayer(champion2, ARENA.w * 0.75, ARENA.h * 0.5, 1);
     this.player2.team = 'p2';
+    this.player2.id = this.player2.id || 'p2';
     if (isBot) {
       this.player2.isBot = true;
       this.player2.botDifficulty = botDifficulty;
@@ -131,15 +134,16 @@ export class ArenaMode {
     
     // Buffs/debuffs
     this.world.onDamage = (unit, amount, source) => {
-      if (source && source.team !== unit.team) {
+      if (!unit) return;
+      if (source && source.team && unit.team && source.team !== unit.team) {
         if (unit.team === 'p1') {
-          this.player1.lastDamageFrom = source.team;
+          this.player1.lastDamageFrom = source;
         } else if (unit.team === 'p2') {
-          this.player2.lastDamageFrom = source.team;
+          this.player2.lastDamageFrom = source;
         }
       }
       // Vampirism
-      if (source && source.buffVamp > 0) {
+      if (source && source.buffVamp > 0 && source.alive) {
         const heal = amount * source.buffVamp;
         source.hp = Math.min(source.maxHp, source.hp + heal);
       }
@@ -147,22 +151,23 @@ export class ArenaMode {
     
     // Kill tracking
     this.world.onDeath = (unit, killer) => {
+      if (!unit) return;
       if (unit.team === 'p1') {
         this.p2Score++;
         this.checkWin();
         // Killer heals 50% of max HP
-        if (killer && typeof killer === 'object') {
+        if (killer && typeof killer === 'object' && killer.alive) {
           killer.hp = Math.min(killer.maxHp, killer.hp + killer.maxHp * 0.5);
         }
-        this.scheduleRespawn(this.player1, killer);
+        if (this.player1) this.scheduleRespawn(this.player1, killer);
       } else if (unit.team === 'p2') {
         this.p1Score++;
         this.checkWin();
         // Killer heals 50% of max HP
-        if (killer && typeof killer === 'object') {
+        if (killer && typeof killer === 'object' && killer.alive) {
           killer.hp = Math.min(killer.maxHp, killer.hp + killer.maxHp * 0.5);
         }
-        this.scheduleRespawn(this.player2, killer);
+        if (this.player2) this.scheduleRespawn(this.player2, killer);
       }
     };
   }
@@ -178,6 +183,7 @@ export class ArenaMode {
   }
   
   scheduleRespawn(player, killer) {
+    if (!player) return;
     player.respawnAt = this.world.time + 4;
     player.respawnPos = { x: player.team === 'p1' ? ARENA.w * 0.25 : ARENA.w * 0.75, y: ARENA.h * 0.5 };
     player.invulnerableUntil = this.world.time + 9; // 4s respawn + 5s invulnerability
@@ -197,55 +203,84 @@ export class ArenaMode {
     }
     
     // Update buffs/debuffs
-    this.updateBuffs(dt);
+    try { this.updateBuffs(dt); } catch {}
     
     // Update active powerup timers
-    this.updatePowerupTimers(dt);
+    try { this.updatePowerupTimers(dt); } catch {}
     
     // Player 1 input (always human)
-    const p1Input = input1;
-    p1Input.dt = dt;
-    const p1Orders = applyInput(this.player1, p1Input, this.world, this.onMoveMarker);
-    for (const slot of ['Q', 'W', 'E', 'R']) {
-      if (p1Input.hit(`Key${slot}`)) {
-        castAbility(this.player1, slot, p1Input.mouse.x, p1Input.mouse.y, this.world);
+    if (this.player1 && this.player1.alive) {
+      try {
+        const p1Input = input1;
+        p1Input.dt = dt;
+        const p1Orders = applyInput(this.player1, p1Input, this.world, this.onMoveMarker);
+        if (this.abilitiesEnabled) {
+          for (const slot of ['Q', 'W', 'E', 'R']) {
+            if (p1Input.hit && p1Input.hit(`Key${slot}`) && p1Input.mouse) {
+              castAbility(this.player1, slot, p1Input.mouse.x, p1Input.mouse.y, this.world);
+            }
+          }
+        }
+        tickAbilities(this.player1, dt);
+        if (this.player1.controller) this.player1.controller.update(dt, this.world);
+        const p1Resolved = this.player1.tickTimers(dt);
+        if (p1Resolved) resolveAttack(this.player1, this.world, p1Resolved, null);
+      } catch (e) {
+        console.error('p1 update error', e);
       }
+    } else if (this.player1 && this.player1.controller) {
+      try {
+        this.player1.controller.stop();
+        tickAbilities(this.player1, dt);
+      } catch {}
     }
-    tickAbilities(this.player1, dt);
-    this.player1.controller.update(dt, this.world);
-    const p1Resolved = this.player1.tickTimers(dt);
-    if (p1Resolved) resolveAttack(this.player1, this.world, p1Resolved, null);
     
     // Player 2 input - for PvP, input is handled externally via applyP2Input
-    if (this.isBot) {
-      this.updateBot(this.player2, dt);
-    } else if (input2) {
-      // Input2 is handled externally for PvP, just tick abilities and timers
-      tickAbilities(this.player2, dt);
-      this.player2.controller.update(dt, this.world);
+    if (this.player2 && this.player2.alive) {
+      try {
+        if (this.isBot) {
+          this.updateBot(this.player2, dt);
+        } else if (input2) {
+          // Input2 is handled externally for PvP, just tick abilities and timers
+          tickAbilities(this.player2, dt);
+          if (this.player2.controller) this.player2.controller.update(dt, this.world);
+        }
+        const p2Resolved = this.player2.tickTimers(dt);
+        if (p2Resolved) resolveAttack(this.player2, this.world, p2Resolved, null);
+      } catch (e) {
+        console.error('p2 update error', e);
+      }
+    } else if (this.player2 && this.player2.controller) {
+      try {
+        this.player2.controller.stop();
+        tickAbilities(this.player2, dt);
+      } catch {}
     }
-    const p2Resolved = this.player2.tickTimers(dt);
-    if (p2Resolved) resolveAttack(this.player2, this.world, p2Resolved, null);
     
     // Powerups
     if (this.powerupsEnabled) {
-      this.updatePowerups(dt);
+      try { this.updatePowerups(dt); } catch {}
     }
     
     // Respawns
     for (const p of [this.player1, this.player2]) {
-      if (!p.alive && p.respawnAt && this.world.time >= p.respawnAt) {
-        this.respawnPlayer(p);
+      if (p && !p.alive && p.respawnAt && this.world.time >= p.respawnAt) {
+        try { this.respawnPlayer(p); } catch {}
       }
     }
     
-    this.world.update(dt);
-    this.world.separate();
-    this.world.clampUnits();
+    try {
+      this.world.update(dt);
+      this.world.separate();
+      this.world.clampUnits();
+    } catch (e) {
+      console.error('world update error', e);
+    }
   }
   
   updateBuffs(dt) {
     for (const player of [this.player1, this.player2]) {
+      if (!player) continue;
       if (player.buffAttackSpeedTimer > 0) {
         player.buffAttackSpeedTimer -= dt;
         if (player.buffAttackSpeedTimer <= 0) player.buffAttackSpeed = 1;
@@ -272,6 +307,10 @@ export class ArenaMode {
   updatePowerupTimers(dt) {
     for (const [playerId, effects] of this.activePowerups) {
       const player = playerId === 'p1' ? this.player1 : this.player2;
+      if (!player) {
+        this.activePowerups.delete(playerId);
+        continue;
+      }
       for (let i = effects.length - 1; i >= 0; i--) {
         const effect = effects[i];
         effect.timer -= dt;
@@ -300,13 +339,14 @@ export class ArenaMode {
     
     // Spawn powerups
     if (this.powerupSpawnTimer <= 0 && this.powerups.length < this.maxPowerups) {
-      this.spawnPowerup();
+      try { this.spawnPowerup(); } catch {}
       this.powerupSpawnTimer = this.rng.range(12, 20);
     }
     
     // Check collection and despawn
     for (let i = this.powerups.length - 1; i >= 0; i--) {
       const pu = this.powerups[i];
+      if (!pu) { this.powerups.splice(i, 1); continue; }
       // Despawn after life expires
       pu.life = (pu.life ?? 30) - dt;
       if (pu.life <= 0) {
@@ -314,10 +354,10 @@ export class ArenaMode {
         continue;
       }
       for (const player of [this.player1, this.player2]) {
-        if (!player.alive) continue;
-        const d = Math.hypot(player.x - pu.x, player.y - pu.y);
-        if (d <= player.hitRadius + 30) {
-          this.collectPowerup(player, pu);
+        if (!player || !player.alive) continue;
+        const d = Math.hypot((player.x || 0) - (pu.x || 0), (player.y || 0) - (pu.y || 0));
+        if (d <= (player.hitRadius || 45) + 30) {
+          try { this.collectPowerup(player, pu); } catch {}
           this.powerups.splice(i, 1);
           break;
         }
@@ -339,33 +379,39 @@ export class ArenaMode {
   }
   
   collectPowerup(player, pu) {
-    const enemy = player.team === 'p1' ? this.player2 : this.player1;
-    const msg = pu.apply(player, enemy);
-    if (this.onMoveMarker) {
-      this.onMoveMarker(pu.x, pu.y, pu.color);
+    if (!player || !player.alive || !pu) return;
+    try {
+      const enemy = player.team === 'p1' ? this.player2 : this.player1;
+      const msg = pu.apply ? pu.apply(player, enemy && enemy.alive ? enemy : null) : '';
+      if (this.onMoveMarker && pu.x !== undefined && pu.y !== undefined) {
+        this.onMoveMarker(pu.x, pu.y, pu.color);
+      }
+      
+      // Track for HUD
+      const playerId = player.team;
+      if (!this.activePowerups.has(playerId)) {
+        this.activePowerups.set(playerId, []);
+      }
+      
+      if (pu.duration > 0) {
+        this.activePowerups.get(playerId).push({
+          type: pu.id,
+          timer: pu.duration,
+          maxTimer: pu.duration,
+          icon: pu.icon,
+          color: pu.color,
+          name: pu.name
+        });
+      }
+      
+      if (this.showBanner) this.showBanner(msg, 'good');
+    } catch (e) {
+      console.error('collectPowerup error', e);
     }
-    
-    // Track for HUD
-    const playerId = player.team;
-    if (!this.activePowerups.has(playerId)) {
-      this.activePowerups.set(playerId, []);
-    }
-    
-    if (pu.duration > 0) {
-      this.activePowerups.get(playerId).push({
-        type: pu.id,
-        timer: pu.duration,
-        maxTimer: pu.duration,
-        icon: pu.icon,
-        color: pu.color,
-        name: pu.name
-      });
-    }
-    
-    if (this.showBanner) this.showBanner(msg, 'good');
   }
   
   updateBot(bot, dt) {
+    if (!bot || !bot.alive || !this.player1 || !this.player1.alive) return;
     bot.botTimer -= dt;
     const target = this.player1;
     const d = Math.hypot(target.x - bot.x, target.y - bot.y);
@@ -403,7 +449,7 @@ export class ArenaMode {
       }
       
       // Use abilities
-      if (this.rng.chance(settings.accuracy * 0.3)) {
+      if (this.abilitiesEnabled && this.rng.chance(settings.accuracy * 0.3)) {
         const available = ['Q', 'W', 'E', 'R'].filter(s => bot.abilityCooldowns[s] <= 0);
         if (available.length) {
           const spell = this.rng.pick(available);
@@ -427,6 +473,9 @@ export class ArenaMode {
     player.pendingTarget = null;
     player.respawnAt = null;
     player.killStreak = 0;
+    if (player.controller) {
+      player.controller.order = { kind: 'stop' };
+    }
     // Clear debuffs
     player.debuffAttackSpeed = 1;
     player.debuffAttackSpeedTimer = 0;
@@ -434,17 +483,22 @@ export class ArenaMode {
     player.debuffMoveSpeedTimer = 0;
   }
   
-  render(scene, opts) {
-    scene.render(this.world, {
-      player: this.player1, // primary view follows p1
-      showRanges: opts.showRanges !== false,
-      attackMoveActive: opts.attackMoveActive,
-      focusTarget: opts.focusTarget,
-      punishTarget: opts.punishTarget,
-      dt: opts.dt,
-      // Custom: render powerups
-      powerups: this.powerups
-    });
+  render(scene, opts = {}) {
+    if (!scene || !this.world) return;
+    try {
+      scene.render(this.world, {
+        player: this.player1, // primary view follows p1
+        showRanges: opts.showRanges !== false,
+        attackMoveActive: opts.attackMoveActive,
+        focusTarget: opts.focusTarget,
+        punishTarget: opts.punishTarget,
+        dt: opts.dt,
+        // Custom: render powerups
+        powerups: this.powerups
+      });
+    } catch (e) {
+      console.error('arena render error', e);
+    }
   }
   
   // Get abilities for HUD

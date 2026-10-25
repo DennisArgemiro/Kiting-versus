@@ -8,11 +8,17 @@ import { buildDodgeDrills } from "./dodging.js";
  * porque tools/probe.mjs usa os índices 0 (kiting) e 3 (dodge).  Os treinos
  * extras com dados REA entram no fim.
  */
-export function buildDrills(champions, snapshot = null) {
+export function buildDrills(champions, snapshot = null, modosDrills = null) {
+  const modosAtivos = modosDrills || {};
+
+  const kiting = buildKitingDrills(champions, snapshot);
+  const dodge = buildDodgeDrills(champions, snapshot);
+  const real = buildRealKitingDrills(champions, snapshot);
+
   return [
-    ...buildKitingDrills(champions, snapshot),
-    ...buildDodgeDrills(champions, snapshot),
-    ...buildRealKitingDrills(champions, snapshot),
+    ...kiting.filter(d => modosAtivos[d.id] !== false),
+    ...dodge.filter(d => modosAtivos[d.id] !== false),
+    ...real.filter(d => modosAtivos[d.id] !== false),
   ];
 }
 

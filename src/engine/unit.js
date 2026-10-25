@@ -41,6 +41,16 @@ export class Unit {
     this.facing = { x: 1, y: 0 };
     this.deadChecked = false;
     this.invulnerableUntil = 0; // timestamp until which unit is invulnerable
+    this.buffVamp = 0;
+    this.buffVampTimer = 0;
+    this.buffAttackSpeed = 1;
+    this.buffAttackSpeedTimer = 0;
+    this.buffMoveSpeed = 1;
+    this.buffMoveSpeedTimer = 0;
+    this.debuffAttackSpeed = 1;
+    this.debuffAttackSpeedTimer = 0;
+    this.debuffMoveSpeed = 1;
+    this.debuffMoveSpeedTimer = 0;
   }
 
   get busy() {
@@ -82,14 +92,23 @@ export class Unit {
    * (the caller resolves damage and spawns projectiles).
    */
   tickTimers(dt) {
-    if (!this.alive) return null;
+    if (!this.alive) {
+      this.pendingTarget = null;
+      this.casting = 0;
+      this.attackTimer = 0;
+      return null;
+    }
     let resolved = null;
     if (this.attackTimer > 0) this.attackTimer = Math.max(0, this.attackTimer - dt);
     if (this.casting > 0) {
       this.casting = Math.max(0, this.casting - dt);
       if (this.casting === 0 && this.pendingTarget) {
-        resolved = this.pendingTarget;
-        this.pendingHit = true;
+        if (this.pendingTarget.alive) {
+          resolved = this.pendingTarget;
+          this.pendingHit = true;
+        } else {
+          this.pendingTarget = null;
+        }
       }
     }
     if (this.hitFlash > 0) this.hitFlash = Math.max(0, this.hitFlash - dt);
@@ -131,11 +150,14 @@ export class Unit {
   }
 
   takeDamage(amount, now) {
-    if (now < this.invulnerableUntil) return this.hp;
+    if (now < (this.invulnerableUntil || 0)) return this.hp;
+    if (!this.alive) return this.hp;
     this.hp = Math.max(0, this.hp - amount);
     this.hitFlash = 0.18;
     this.lastDamageAt = now;
-    if (this.hp <= 0) this.alive = false;
+    if (this.hp <= 0) {
+      this.alive = false;
+    }
     return this.hp;
   }
 
@@ -161,22 +183,24 @@ export class Unit {
  */
 export class Champion extends Unit {
   constructor(data, opts = {}) {
-    const stats = data.stats;
+    const stats = data.stats || {};
+    const mult = opts.multipliers || {};
+    
     super({
-      name: data.name,
+      name: data.name || data.alias || "Champion",
       team: opts.team || "player",
       x: opts.x || 0,
       y: opts.y || 0,
-      hp: opts.hp ?? stats.health,
+      hp: (opts.hp ?? stats.health ?? 600) * (mult.health || 1),
       radius: opts.radius ?? 65,
-      moveSpeed: opts.moveSpeed ?? stats.movementSpeed,
-      attackRange: opts.attackRange ?? stats.attackRange,
-      attackPeriod: opts.attackPeriod ?? stats.attackPeriod,
-      attackCast: opts.attackCast ?? stats.attackCastTime,
-      attackDamage: opts.attackDamage ?? stats.attackDamage,
-      projectileSpeed: opts.projectileSpeed ?? stats.projectileSpeed,
-      isMelee: opts.isMelee ?? stats.isMelee,
-      armor: opts.armor ?? stats.armor,
+      moveSpeed: (opts.moveSpeed ?? stats.movementSpeed ?? 325) * (mult.movementSpeed || 1),
+      attackRange: (opts.attackRange ?? stats.attackRange ?? 550) * (mult.attackRange || 1),
+      attackPeriod: (opts.attackPeriod ?? stats.attackPeriod ?? 0.625) * (mult.attackSpeed || 1),
+      attackCast: (opts.attackCast ?? stats.attackCastTime ?? 0.3) * (mult.attackCastTime || 1),
+      attackDamage: (opts.attackDamage ?? stats.attackDamage ?? 60) * (mult.attackDamage || 1),
+      projectileSpeed: (opts.projectileSpeed ?? stats.projectileSpeed ?? 2000) * (mult.projectileSpeed || 1),
+      isMelee: opts.isMelee ?? stats.isMelee ?? false,
+      armor: (opts.armor ?? stats.armor ?? 30) * (mult.armor || 1),
     });
     this.data = data;
     this.alias = data.alias;

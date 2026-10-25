@@ -43,16 +43,19 @@ export function tuneEnemy(unit) {
 }
 
 /** Create the player's champion instance for a drill. */
-export function makePlayer(championData, x, y, hpScale = 1) {
+export function makePlayer(championData, x, y, hpScale = 1, attackSpeedScale = null) {
   const combat = config.combat();
+  const champConfig = config.champion(championData.alias) || {};
+  const atkSpeedScale = attackSpeedScale ?? combat.playerAttackSpeedScale;
   const player = new Champion(championData, {
     team: "player",
     x,
     y,
     hp: championData.stats.health * hpScale * combat.playerHpScale,
     hitRadius: combat.playerHitRadius,
-    attackPeriod: championData.stats.attackPeriod / combat.playerAttackSpeedScale,
-    attackCast: championData.stats.attackCastTime / combat.playerAttackSpeedScale,
+    attackPeriod: championData.stats.attackPeriod / atkSpeedScale,
+    attackCast: championData.stats.attackCastTime / atkSpeedScale,
+    multipliers: champConfig,
   });
   player.isPlayer = true;
   player.abilityCooldowns = { Q: 0, W: 0, E: 0, R: 0 };
@@ -65,7 +68,7 @@ export function makePlayer(championData, x, y, hpScale = 1) {
  * Melee attacks apply instantly, ranged attacks spawn a projectile.
  */
 export function resolveAttack(unit, world, target, onLanded) {
-  if (!target || !target.alive) {
+  if (!unit || !unit.alive || !target || !target.alive || !world) {
     onLanded?.(null);
     return;
   }
@@ -104,7 +107,7 @@ export function resolveAttack(unit, world, target, onLanded) {
  *
  *   right click on the ground  -> move
  *   right click on an enemy   -> attack
- *   A + click                  -> attack-move
+ *   A (held) + click          -> attack-move
  */
 export function applyInput(player, input, world, onMoveMarker) {
   const controller = player.controller;
@@ -118,24 +121,38 @@ export function applyInput(player, input, world, onMoveMarker) {
   for (const click of input.takeClicks()) {
     const unit = unitUnderCursor(world, click.x, click.y, 150);
     const attackMove = input.attackMoveActive;
-    const targetNearest = config.combat().attackMoveTargetNearest;
-    // Kept for the automated driver in tools/probe.mjs.
+    const targetNearest = config.combat().attackMoveTargetNearest !== false;
     input.lastClick = { button: click.button, x: click.x, y: click.y, onUnit: Boolean(unit) };
 
     if (click.button === 2) {
       if (attackMove) {
-        if (targetNearest && unit) {
-          // Right-click on unit with A held -> attack that unit directly
+        // A held + right click: attack-move
+        input.consumedAttackMove = true;
+        if (world && world.nearest) {
+          const enemyNear = world.nearest(click.x, click.y, (player.attackRange || 550) * 1.3, (u) => u && u.alive && u.team !== player.team);
+          if (targetNearest && enemyNear && enemyNear.alive) {
+            controller.attackUnit(enemyNear);
+            events.ordered = ORDER.ATTACK;
+            onMoveMarker?.(enemyNear.x, enemyNear.y, 0xff5f6d);
+          } else if (unit && unit.alive) {
+            controller.attackUnit(unit);
+            events.ordered = ORDER.ATTACK;
+            onMoveMarker?.(unit.x, unit.y, 0xff5f6d);
+          } else {
+            controller.attackMoveTo(click.x, click.y);
+            events.ordered = ORDER.ATTACK_MOVE;
+            onMoveMarker?.(click.x, click.y, 0xffb454);
+          }
+        } else if (unit && unit.alive) {
           controller.attackUnit(unit);
           events.ordered = ORDER.ATTACK;
           onMoveMarker?.(unit.x, unit.y, 0xff5f6d);
         } else {
-          // Right-click on ground with A held -> attack-move
           controller.attackMoveTo(click.x, click.y);
           events.ordered = ORDER.ATTACK_MOVE;
           onMoveMarker?.(click.x, click.y, 0xffb454);
         }
-      } else if (unit) {
+      } else if (unit && unit.alive) {
         controller.attackUnit(unit);
         events.ordered = ORDER.ATTACK;
         onMoveMarker?.(unit.x, unit.y, 0xff5f6d);
@@ -146,10 +163,29 @@ export function applyInput(player, input, world, onMoveMarker) {
       }
     } else if (click.button === 0) {
       if (attackMove) {
-        controller.attackMoveTo(click.x, click.y);
-        events.ordered = ORDER.ATTACK_MOVE;
-        onMoveMarker?.(click.x, click.y, 0xffb454);
-      } else if (unit) {
+        // A held + left click: attack-move
+        input.consumedAttackMove = true;
+        if (world && world.nearest) {
+          const enemyNear = world.nearest(click.x, click.y, (player.attackRange || 550) * 1.3, (u) => u && u.alive && u.team !== player.team);
+          if (enemyNear && enemyNear.alive) {
+            controller.attackUnit(enemyNear);
+            events.ordered = ORDER.ATTACK;
+            onMoveMarker?.(enemyNear.x, enemyNear.y, 0xff5f6d);
+          } else {
+            controller.attackMoveTo(click.x, click.y);
+            events.ordered = ORDER.ATTACK_MOVE;
+            onMoveMarker?.(click.x, click.y, 0xffb454);
+          }
+        } else if (unit && unit.alive) {
+          controller.attackUnit(unit);
+          events.ordered = ORDER.ATTACK;
+          onMoveMarker?.(unit.x, unit.y, 0xff5f6d);
+        } else {
+          controller.attackMoveTo(click.x, click.y);
+          events.ordered = ORDER.ATTACK_MOVE;
+          onMoveMarker?.(click.x, click.y, 0xffb454);
+        }
+      } else if (unit && unit.alive) {
         controller.attackUnit(unit);
         events.ordered = ORDER.ATTACK;
         onMoveMarker?.(unit.x, unit.y, 0xff5f6d);
@@ -234,7 +270,7 @@ export function tickAbilities(player, dt) {
  *   'caster'      keeps its distance and fires skillshots
  */
 export function updateEnemy(enemy, world, player, dt, options = {}) {
-  if (!enemy.alive || !player.alive) return;
+  if (!enemy || !enemy.alive || !player || !player.alive) return;
 
   const behaviour = enemy.behaviour || "melee";
   const toPlayer = Math.hypot(player.x - enemy.x, player.y - enemy.y);
