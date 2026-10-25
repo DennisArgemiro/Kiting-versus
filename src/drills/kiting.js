@@ -11,12 +11,6 @@ import {
   syntheticStats, withRealStats,
 } from "./skillgap.js";
 
-/**
- * Resolves an enemy "role" into a concrete champion.
- *
- * Roles keep the levels champion-agnostic, so a melee champion and a marksman
- * both get a fair sparring partner whose reach matches their own.
- */
 const CASTER_POOL = ["Ahri", "Lux", "Morgana", "Brand", "Thresh", "Blitzcrank", "Zed", "Velkoz", "Ekko"];
 
 function resolveChampion(spec, ctx) {
@@ -27,7 +21,6 @@ function resolveChampion(spec, ctx) {
   let base;
   switch (spec.role) {
     case "partner": {
-      // The sparring partner with the closest reach to the player.
       base = pickSparringPartner(list, ctx.champion);
       break;
     }
@@ -50,28 +43,12 @@ function resolveChampion(spec, ctx) {
       base = byAlias[spec.champion] || ctx.champion;
   }
 
-  // The real Firestore level stores generic training stats (health, AD,
-  // speed, attack speed) for the enemy.  Apply them to a clone of the chosen
-  // champion so the training uses the recovered numbers.
   return withRealStats(base, spec.stats, {
     attackRange: spec.attackRange,
     isMelee: spec.isMelee,
   });
 }
 
-/**
- * Shared kiting machinery.
- *
- * The skill being trained is the attack / reposition rhythm:
- *   attack  ->  the windup locks you in place
- *   ->  step out of the enemy's reach
- *   ->  step back in and attack again
- *
- * Three metrics capture it:
- *   dps        how much of your theoretical damage you actually landed
- *   safety     how much of the drill you spent outside the enemy's reach
- *   rhythm     accuracy plus how often you repositioned after a swing
- */
 class KitingDrill {
   constructor({ champion, level, params, rng, champions, onMoveMarker }) {
     this.world = new World(ARENA);
@@ -83,7 +60,6 @@ class KitingDrill {
     this.timeLeft = params.duration;
     this.finished = false;
     this.outcome = "completed";
-    // Countdown before the drill starts: the clock does not run yet.
     this.ready = 2.4;
 
     this.player = makePlayer(champion, ARENA.w * 0.375, ARENA.h / 2, 1);
@@ -148,7 +124,6 @@ class KitingDrill {
         ? enemy.data.spells?.find((s) => s.slot === spec.spell && s.shape !== "self")
         : null;
       if (enemy.behaviour === "caster") {
-        // Casters never swing; they only fire skillshots.
         enemy.attackRange = 0;
         enemy.preferredRange = spec.range ?? 1250;
         enemy.casterTimer = 2.2;
@@ -161,10 +136,6 @@ class KitingDrill {
     });
   }
 
-  /**
-   * Places the enemies just outside the player's reach, so the first decision
-   * of the drill is "step in or not", not "walk across the map".
-   */
   placeEnemies(count, spread = 1) {
     const out = [];
     const startX = this.player.x + this.player.attackRange * 1.25;
@@ -202,7 +173,6 @@ class KitingDrill {
       }
     }
 
-    // ---- player: League style orders ---------------------------------
     const orders = applyInput(player, input, world, this.onMoveMarker);
     if (orders.ordered) this.metrics.orders += 1;
 
@@ -217,13 +187,10 @@ class KitingDrill {
     const action = player.controller.update(dt, world);
     if (action.attacked) this.metrics.attacksStarted += 1;
 
-    // Deactivate attack-move after an attack-move attack completes (LoL behavior:
-    // press A -> show range -> click ground -> move there and attack nearest -> range hides)
     if (input.attackMoveActive && action.attacked && player.controller.order.kind === "attackMove") {
       input.deactivateAttackMove();
     }
 
-    // ---- timers & attack resolution ----------------------------------
     const resolved = player.tickTimers(dt);
     if (resolved) {
       this.metrics.attacksResolved += 1;
@@ -247,7 +214,6 @@ class KitingDrill {
       }
     }
 
-    // ---- caster skillshots -------------------------------------------
     for (const enemy of this.enemies) {
       if (!enemy.alive || enemy.behaviour !== "caster") continue;
       enemy.casterTimer = (enemy.casterTimer ?? 1.5) - dt;
@@ -263,7 +229,6 @@ class KitingDrill {
       }
     }
 
-    // ---- reposition tracking -----------------------------------------
     if (this.repositionProbe) {
       const p = this.repositionProbe;
       const target = p.target;
@@ -280,7 +245,6 @@ class KitingDrill {
       }
     }
 
-    // ---- metrics -----------------------------------------------------
     if (!this.finished) {
       let inDanger = false;
       for (const enemy of this.enemies) {
@@ -298,7 +262,6 @@ class KitingDrill {
       }
     }
 
-    // ---- deaths & respawns -------------------------------------------
     for (const enemy of this.enemies) {
       if (enemy.alive || enemy.counted) continue;
       enemy.counted = true;
@@ -306,7 +269,6 @@ class KitingDrill {
       world.effect("ring", enemy.x, enemy.y, {
         color: "#46d39a", radius: 60, grow: 320, duration: 0.6,
       });
-      // Bring the opponent back so the drill keeps its pressure.
       this.respawns.push({ enemy, at: world.time + 3 });
     }
     for (let i = this.respawns.length - 1; i >= 0; i--) {
@@ -345,19 +307,12 @@ class KitingDrill {
     });
   }
 
-  /** The unit the player is ordered to hit, or the closest live enemy. */
   focusTarget() {
     const ordered = this.player.controller.target;
     if (ordered && ordered.alive) return ordered;
     return this.enemies.find((e) => e.alive) || null;
   }
 
-  /**
-   * Live coaching for the orbwalk rhythm.
-   *
-   * The technique being drilled: right click the target to attack, then right
-   * click the ground to step out before the cooldown is back.
-   */
   coach() {
     const player = this.player;
     const controller = player.controller;
@@ -451,10 +406,6 @@ function verdictFor(score, outcome) {
   return "ComeceAttackando quando estiver com o alvo no anel azul e recue logo depois.";
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Drill 1 — Kiting de Separação (Dummy de 3 hits)
-// ───────────────────────────────────────────────────────────────────────────
-
 class SpacingKitingDrill {
   constructor({ champion, level, params, rng, champions, onMoveMarker }) {
     this.world = new World(ARENA);
@@ -468,20 +419,18 @@ class SpacingKitingDrill {
     this.outcome = "completed";
     this.ready = 2.4;
 
-    // Calcular nível atual para definir vida dos dummies
     this.levelNum = (level && level.index) || 1;
 
-    // Create player first so we can use its stats for dummy HP
-    this.player = makePlayer(champion, ARENA.w * 0.5, ARENA.h * 0.5, 1, 1); // attackSpeedScale = 1 (sem limitação)
-    applyPlayerStats(this.player, params.playerStats, params.playerHpScale ?? 1);
+    this.player = makePlayer(champion, ARENA.w * 0.5, ARENA.h * 0.5, 1, 1);
+    const playerStatsForDummy = params.playerStats ? { ...params.playerStats } : undefined;
+    if (playerStatsForDummy) delete playerStatsForDummy.attackSpeed;
+    applyPlayerStats(this.player, playerStatsForDummy, params.playerHpScale ?? 1);
     this.world.add(this.player);
 
-    // Vida dos dummies: aumenta até o nível 5 (máx 6 hits), depois volta para 3
     const dummyHits = this.levelNum >= 1 && this.levelNum <= 5 ? this.levelNum : 3;
     this.dummyHitsToKill = dummyHits;
     this.dummyHp = Math.max(1, Math.round((this.player.attackDamage || 60) * dummyHits));
 
-    // Score system
     this.score = 0;
     this.lastPos = { x: this.player.x || 0, y: this.player.y || 0 };
     this.lastMoveTime = this.world.time;
@@ -489,15 +438,12 @@ class SpacingKitingDrill {
     this.cooldownPenaltyTime = 0;
     this.movedDuringCooldown = false;
 
-    // Dummies state (3 hits to kill each, up to 3 at once)
     this.dummies = [];
     this.dummyKills = 0;
 
-    // Tempo de vida dos dummies: começa em 10s no nível 1, diminui até o nível 10
     this.dummyLifeTime = Math.max(2, 10 - (this.levelNum - 1));
 
     this.world.onDamage = (unit, amount, source) => {
-      // Only dummies can take damage in this drill.
       if (!unit || !unit.isDummy || !unit.alive) return;
       unit.hitsTaken = (unit.hitsTaken || 0) + 1;
       if (unit.hitsTaken >= unit.hitsToKill) {
@@ -585,15 +531,12 @@ class SpacingKitingDrill {
       }
     }
 
-    // ---- Respawn dead dummies --------------------------------------
     const deadDummies = this.dummies.filter(d => d && !d.alive);
     for (const d of deadDummies) {
       try { world.remove(d); } catch {}
       this.dummies.splice(this.dummies.indexOf(d), 1);
     }
-    // Respawn any dead ones
     const deadCount = this.dummies.filter(d => d && !d.alive).length;
-    // Remove dummies que expirou o tempo de vida
     for (const d of this.dummies) {
       if (d && d.alive && d.spawnTime && d.lifeTime) {
         if (now - d.spawnTime >= d.lifeTime) {
@@ -604,33 +547,28 @@ class SpacingKitingDrill {
         }
       }
     }
-    while (this.dummies.filter(d => d && d.alive).length < 3) {
+    while (this.dummies.filter(d => d && d.alive).length < 2) {
       try { this.spawnDummy(); } catch {}
     }
 
-    // ---- Player input -------------------------------------------------
     let orders = null;
     try { orders = applyInput(player, input, world, this.onMoveMarker); } catch {}
 
-    // Track movement (position changed)
     const moved = Math.hypot(player.x - this.lastPos.x, player.y - this.lastPos.y) > 1;
     this.lastPos = { x: player.x, y: player.y };
 
-    // Track attack cooldown state
     const attackTimer = player.attackTimer || 0;
     const inCooldown = attackTimer > 0;
 
-    // Detect attack landed
     let resolved = null;
     try { resolved = player.tickTimers(dt); } catch {}
     if (resolved) {
-      this.score += 10; // +10 per AA
-      this.movedDuringCooldown = false; // reset for next cooldown cycle
+      this.score += 10;
+      this.movedDuringCooldown = false;
       this.cooldownStartTime = now;
       try { resolveAttack(player, world, resolved, null); } catch {}
     }
 
-    // Detect start of cooldown (when attackTimer goes from 0 to >0)
     if (attackTimer > 0 && this.cooldownStartTime === 0) {
       this.cooldownStartTime = now;
       this.cooldownPenaltyTime = now;
@@ -642,13 +580,11 @@ class SpacingKitingDrill {
       this.movedDuringCooldown = false;
     }
 
-    // +10 for moving while AA on cooldown (once per cooldown cycle)
     if (inCooldown && moved && !this.movedDuringCooldown) {
       this.score += 10;
       this.movedDuringCooldown = true;
     }
 
-    // -1 per 1s that AA is on cooldown and player NOT moving
     if (inCooldown && !moved) {
       if (now - this.cooldownPenaltyTime >= 1.0) {
         this.score -= 1;
@@ -656,7 +592,6 @@ class SpacingKitingDrill {
       }
     }
 
-    // -2 per 500ms if player is not moving at all
     if (!moved) {
       if (now - this.lastMoveTime >= 0.5) {
         this.score -= 2;
@@ -666,7 +601,6 @@ class SpacingKitingDrill {
       this.lastMoveTime = now;
     }
 
-    // ---- Tick abilities & controller ----------------------------------
     for (const slot of ["Q", "W", "E", "R"]) {
       try {
         if (input.hit(`Key${slot}`)) {
@@ -676,14 +610,12 @@ class SpacingKitingDrill {
     }
     try { tickAbilities(player, dt); player.controller.update(dt, world); } catch {}
 
-    // Deactivate attack-move after attack
     try {
       if (input.attackMoveActive && player.controller.order.kind === "attackMove") {
         input.deactivateAttackMove();
       }
     } catch {}
 
-    // ---- World update -------------------------------------------------
     try { world.update(dt); world.separate(); world.clampUnits(); } catch {}
 
     if (!player.alive && !this.finished) {
@@ -706,7 +638,6 @@ class SpacingKitingDrill {
     } catch {}
   }
 
-  /** The closest dummy is the focus target. */
   focusTarget() {
     let best = null;
     let bestDist = Infinity;
@@ -719,7 +650,6 @@ class SpacingKitingDrill {
     return best;
   }
 
-  /** Live coaching. */
   coach() {
     const player = this.player;
     const target = this.focusTarget();
@@ -737,7 +667,7 @@ class SpacingKitingDrill {
     return [
       { label: "Pontos", value: Math.max(0, Math.round(this.score)), tone: "good" },
       { label: "Dummies", value: this.dummyKills },
-      { label: "Ativos", value: `${aliveDummies}/3` },
+      { label: "Ativos", value: `${aliveDummies}/2` },
     ];
   }
 
@@ -772,14 +702,9 @@ class SpacingKitingDrill {
   }
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Drill 3 — Kiting de Peel (proteger o aliado)
-// ───────────────────────────────────────────────────────────────────────────
-
 class PeelKitingDrill extends KitingDrill {
   constructor(opts) {
     super(opts);
-    // Your partner: a low-health carry standing next to you in the lane.
     const ally = new Champion(opts.champion, {
       team: "ally",
       x: this.player.x + 320,
@@ -792,14 +717,10 @@ class PeelKitingDrill extends KitingDrill {
     ally.attackRange = 0;
     this.world.add(ally);
     this.ally = ally;
-    // The generic AI targets `this.enemyTarget(enemy)` when it exists.  Until
-    // the ally dies, peel enemies chase the ally; afterwards they switch back.
     this.enemyTarget = () => (this.ally?.alive ? this.ally : this.player);
   }
 
   update(dt, input) {
-    // `enemyTarget` (set in the constructor) redirects the generic enemy AI
-    // to the ally.  The player still runs the normal kiting loop.
     super.update(dt, input);
   }
 
@@ -820,14 +741,6 @@ class PeelKitingDrill extends KitingDrill {
     return base;
   }
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// Drill definitions
-// ───────────────────────────────────────────────────────────────────────────
-
-// ───────────────────────────────────────────────────────────────────────────
-// Real Skill Gap levels (Firestore, v4.4.0)
-// ───────────────────────────────────────────────────────────────────────────
 
 function realSpacingLevels(snapshot) {
   return levelsOf(snapshot, "AUTO_SPACING").map((level, i) => ({
@@ -1012,11 +925,6 @@ export function buildKitingDrills(champions, snapshot = null) {
   ];
 }
 
-/**
- * Treinos extras que usam o mesmo motor de kiting, mas representam chaves
- * reais que não existiam no catálogo original do web trainer.  São anexados
- * depois dos treinos legados para não deslocar os índices usados pelo probe.
- */
 export function buildRealKitingDrills(champions, snapshot = null) {
   if (!snapshot) return [];
 
