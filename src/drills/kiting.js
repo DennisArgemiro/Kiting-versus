@@ -63,7 +63,9 @@ class KitingDrill {
     this.ready = 2.4;
 
     this.player = makePlayer(champion, ARENA.w * 0.375, ARENA.h / 2, 1);
-    applyPlayerStats(this.player, params.playerStats, params.playerHpScale ?? 1);
+    const playerStatsForDummy = params.playerStats ? { ...params.playerStats } : undefined;
+    if (playerStatsForDummy) delete playerStatsForDummy.attackSpeed;
+    applyPlayerStats(this.player, playerStatsForDummy, params.playerHpScale ?? 1);
     this.world.add(this.player);
 
     this.state = { attackTarget: null };
