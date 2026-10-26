@@ -40,9 +40,9 @@ export function makePlayer(championData, x, y, hpScale = 1, attackSpeedScale = n
 
   // championData.stats.attackPeriod already has the champion override applied (final value).
   // Champion constructor multiplies by mult.attackSpeed again, so we need to pass the BASE
-  // attackPeriod (before multiplier) to get the correct final value.
+  // attackPeriod (final / multiplier) so Champion's multiplication gives the correct final value.
   const mult = champConfig.attackSpeed || 1;
-  const baseAttackPeriod = championData.stats.attackPeriod * mult;
+  const baseAttackPeriod = championData.stats.attackPeriod / mult;
 
   const player = new Champion(championData, {
     team: "player",
