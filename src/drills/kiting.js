@@ -458,7 +458,8 @@ class SpacingKitingDrill {
   spawnDummy() {
     if (!this.rng || !this.player) return;
     const angle = this.rng.range(0, Math.PI * 2);
-    const distance = 300;
+    // Spawn 20% beyond player's attack range
+    const distance = this.player.attackRange * 1.2;
     const x = this.player.x + Math.cos(angle) * distance;
     const y = this.player.y + Math.sin(angle) * distance;
     if (!isFinite(x) || !isFinite(y)) return;
@@ -518,7 +519,7 @@ class SpacingKitingDrill {
       this.ready = Math.max(0, this.ready - dt);
       world.update(dt);
       if (this.ready <= 0) {
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 2; i++) {
           try { this.spawnDummy(); } catch {}
         }
       }

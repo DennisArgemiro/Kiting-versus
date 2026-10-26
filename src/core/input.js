@@ -21,6 +21,7 @@ export class Input {
     this.consumedAttackMove = false; // set true when attack-move click processed
     this._cameraLocked = initialCameraLocked;
     this.enabled = true;
+    this._zoomDelta = 0; // Accumulated zoom delta from wheel
     this._bind();
   }
 
@@ -77,6 +78,18 @@ export class Input {
     });
 
     this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+    // Mouse wheel zoom (like League of Legends)
+    this.canvas.addEventListener("wheel", (e) => {
+      if (!this.enabled) return;
+      e.preventDefault();
+      // Emit zoom event for the scene to handle
+      const zoomDelta = -e.deltaY * 0.001; // Scroll up = zoom in
+      this._zoomDelta = (this._zoomDelta || 0) + zoomDelta;
+      // Clamp zoom
+      if (this._zoomDelta > 1.5) this._zoomDelta = 1.5;
+      if (this._zoomDelta < -0.5) this._zoomDelta = -0.5;
+    }, { passive: false });
   }
 
   /** Clears any pending state between drills. */
@@ -88,6 +101,7 @@ export class Input {
     this.mouse.x = 0;
     this.mouse.y = 0;
     this._lastClient = null;
+    this._zoomDelta = 0;
   }
 
   /** True while the key is held. */
@@ -146,6 +160,13 @@ export class Input {
     const out = this.clicks.slice();
     this.clicks.length = 0;
     return out;
+  }
+
+  /** Consumes and returns the accumulated zoom delta from mouse wheel. */
+  consumeZoomDelta() {
+    const delta = this._zoomDelta || 0;
+    this._zoomDelta = 0;
+    return delta;
   }
 
   endFrame() {
