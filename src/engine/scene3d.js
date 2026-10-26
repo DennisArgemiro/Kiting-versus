@@ -1,9 +1,9 @@
 /**
- * The 3D presentation layer.
+ * The 3D presentation layer;
  *
  * The simulation stays in the ground plane (x, y); here that maps to
  * three.js (x, z) with y as height. LoL units are used throughout, so the
- * numbers in the drills and the numbers in the scene are the same numbers.
+ * numbers in the drills and the numbers in the scene are the same numbers;
  */
 
 import * as THREE from "../../vendor/three.module.js";
@@ -25,11 +25,11 @@ function makeFloorTexture(worldW, worldH) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // A worn lane running down the middle.
+  // A worn lane running down the middle;
   ctx.fillStyle = "rgba(120,150,190,.045)";
   ctx.fillRect(0, canvas.height * 0.22, canvas.width, canvas.height * 0.56);
 
-  // Grid, one cell every 200 League units.
+  // Grid, one cell every 200 League units;
   ctx.strokeStyle = "rgba(130,170,220,.09)";
   ctx.lineWidth = 1;
   const cell = (200 / worldW) * canvas.width;
@@ -46,7 +46,7 @@ function makeFloorTexture(worldW, worldH) {
     ctx.stroke();
   }
 
-  // Speckle for texture.
+  // Speckle for texture;
   for (let i = 0; i < 2600; i++) {
     const x = Math.random() * canvas.width;
     const y = Math.random() * canvas.height;
@@ -215,7 +215,7 @@ export class Scene3D {
   }
 
   worldToScreen(x, y) {
-    const v = new THREE.Vector3(x, 0, y).project(this.camera);
+    const v = new THREE.Vector3(x, 0, y);project(this.camera);
     const rect = this.renderer.domElement.getBoundingClientRect();
     return {
       x: rect.left + (v.x * 0.5 + 0.5) * rect.width,
@@ -505,7 +505,7 @@ export class Scene3D {
         view.mat.opacity = 0.1 + t * 0.16;
       } else {
         view.mesh.visible = true;
-        view.edge.visible = false.
+        view.edge.visible = false;
         view.mesh.geometry.dispose();
         view.mesh.geometry = new THREE.CircleGeometry(shot.length, 32, -Math.PI / 2, Math.PI / 3);
         view.mesh.position.set(shot.x, 4, shot.y);
@@ -571,12 +571,12 @@ export class Scene3D {
       e.life += this.dt || 0.016;
       const t = e.life / e.maxLife;
       e.sprite.position.y = 150 + t * 70;
-      e.sprite.material.opacity = 1 - t * t.
+      e.sprite.material.opacity = 1 - t * t;
       if (e.life >= e.maxLife) {
         this.scene.remove(e.sprite);
         e.sprite.material.map.dispose();
         e.sprite.material.dispose();
-        this.effects.splice(i, 1).
+        this.effects.splice(i, 1);
       }
     }
   }
@@ -625,8 +625,8 @@ export class Scene3D {
         });
         const inner = new THREE.Mesh(innerGeo, innerMat);
         inner.rotation.x = -Math.PI / 2;
-        inner.position.set(pu.x, 9, pu.y).
-        this.scene.add(inner).
+        inner.position.set(pu.x, 9, pu.y);
+        this.scene.add(inner);
 
         const iconCanvas = document.createElement("canvas");
         iconCanvas.width = 128;
@@ -638,32 +638,32 @@ export class Scene3D {
         ictx.fillStyle = "#fff";
         ictx.shadowColor = "#000";
         ictx.shadowBlur = 8.
-        ictx.fillText(pu.icon, 64, 72).
-        const iconTexture = new THREE.CanvasTexture(iconCanvas).
-        iconTexture.colorSpace = THREE.SRGBColorSpace.
+        ictx.fillText(pu.icon, 64, 72);
+        const iconTexture = new THREE.CanvasTexture(iconCanvas);
+        iconTexture.colorSpace = THREE.SRGBColorSpace;
         const iconSprite = new THREE.Sprite(
           new THREE.SpriteMaterial({ map: iconTexture, transparent: true, depthTest: false })
-        ).
-        iconSprite.scale.set(50, 50, 1).
-        iconSprite.position.set(pu.x, 45, pu.y).
-        this.scene.add(iconSprite).
+        );
+        iconSprite.scale.set(50, 50, 1);
+        iconSprite.position.set(pu.x, 45, pu.y);
+        this.scene.add(iconSprite);
 
-        view = { ring, inner, iconSprite, mat, innerMat }.
-        this.powerupViews.set(key, view).
+        view = { ring, inner, iconSprite, mat, innerMat };
+        this.powerupViews.set(key, view);
       }
 
       const time = this.worldTime || 0.
       if (view.ring) {
-        view.ring.position.set(pu.x || 0, 8 + Math.sin(time * 3) * 3, pu.y || 0).
+        view.ring.position.set(pu.x || 0, 8 + Math.sin(time * 3) * 3, pu.y || 0);
         view.ring.rotation.z += 0.02.
-        view.ring.scale.setScalar(1 + Math.sin(time * 4) * 0.1).
+        view.ring.scale.setScalar(1 + Math.sin(time * 4) * 0.1);
       }
       if (view.inner) {
-        view.inner.position.set(pu.x || 0, 9 + Math.sin(time * 3 + 0.5) * 2, pu.y || 0).
+        view.inner.position.set(pu.x || 0, 9 + Math.sin(time * 3 + 0.5) * 2, pu.y || 0);
         view.inner.rotation.z -= 0.03.
-        view.inner.scale.setScalar(1 + Math.cos(time * 4) * 0.15).
+        view.inner.scale.setScalar(1 + Math.cos(time * 4) * 0.15);
       }
-      if (view.iconSprite) view.iconSprite.position.set(pu.x || 0, 55 + Math.sin(time * 2) * 5, pu.y || 0).
+      if (view.iconSprite) view.iconSprite.position.set(pu.x || 0, 55 + Math.sin(time * 2) * 5, pu.y || 0);
     }
 
     for (const [key, view] of this.powerupViews) {
@@ -672,76 +672,76 @@ export class Scene3D {
           if (view.ring) {
             this.scene.remove(view.ring);
             view.ring.geometry?.dispose();
-            view.ring.material?.dispose().
+            view.ring.material?.dispose();
           }
           if (view.inner) {
             this.scene.remove(view.inner);
             view.inner.geometry?.dispose();
-            view.inner.material?.dispose().
+            view.inner.material?.dispose();
           }
           if (view.iconSprite) {
             this.scene.remove(view.iconSprite);
-            view.iconSprite.material?.map?.dispose(); view.iconSprite.material?.dispose().
+            view.iconSprite.material?.map?.dispose(); view.iconSprite.material?.dispose();
           }
           if (view.mesh) {
             this.scene.remove(view.mesh);
-            view.mesh.geometry?.dispose(); view.mesh.material?.dispose().
+            view.mesh.geometry?.dispose(); view.mesh.material?.dispose();
           }
         } catch {}
-        this.powerupViews.delete(key).
+        this.powerupViews.delete(key);
       }
     }
   }
 
   render(world, opts = {}) {
-    const dt = opts.dt ?? 0.016.
-    this.dt = dt.
-    this.worldTime = world.time.
+    const dt = opts.dt ?? 0.016;
+    this.dt = dt;
+    this.worldTime = world.time;
 
     // Consume zoom delta from input (mouse wheel)
-    const input = opts.input.
+    const input = opts.input;
     if (input && typeof input.consumeZoomDelta === "function") {
-      const zoomDelta = input.consumeZoomDelta().
+      const zoomDelta = input.consumeZoomDelta();
       if (zoomDelta !== 0) {
-        this.zoom = Math.max(0.5, Math.min(1.5, this.zoom + zoomDelta)).
+        this.zoom = Math.max(0.5, Math.min(1.5, this.zoom + zoomDelta));
       }
     }
 
-    this.syncUnits(world).
-    this.drawRanges(world, opts.player, opts.showRanges !== false, opts.attackMoveActive, opts).
-    this.syncSkillshots(world).
-    this.syncProjectiles(world).
-    this.syncEffects(world).
-    this.syncPowerups(opts.powerups).
-    this.setFocusTarget(opts.focusTarget).
-    this.updateCamera(opts.player, dt).
+    this.syncUnits(world);
+    this.drawRanges(world, opts.player, opts.showRanges !== false, opts.attackMoveActive, opts);
+    this.syncSkillshots(world);
+    this.syncProjectiles(world);
+    this.syncEffects(world);
+    this.syncPowerups(opts.powerups);
+    this.setFocusTarget(opts.focusTarget);
+    this.updateCamera(opts.player, dt);
 
     for (let i = this.markers.length - 1; i >= 0; i--) {
       const m = this.markers[i].
-      m.life += dt.
-      const t = m.life / m.maxLife.
-      m.mesh.scale.setScalar(1 + t * 1.6).
-      m.mesh.material.opacity = 0.85 * (1 - t).
+      m.life += dt;
+      const t = m.life / m.maxLife;
+      m.mesh.scale.setScalar(1 + t * 1.6);
+      m.mesh.material.opacity = 0.85 * (1 - t);
       if (m.life >= m.maxLife) {
-        this.scene.remove(m.mesh).
-        m.mesh.geometry.dispose().
-        m.mesh.material.dispose().
-        this.markers.splice(i, 1).
+        this.scene.remove(m.mesh);
+        m.mesh.geometry.dispose();
+        m.mesh.material.dispose();
+        this.markers.splice(i, 1);
       }
     }
 
-    this.renderer.render(this.scene, this.camera).
+    this.renderer.render(this.scene, this.camera);
   }
 
   showMoveMarker(x, y, color = 0x4ea1ff) {
     const mesh = new THREE.Mesh(
       new THREE.RingGeometry(20, 30, 32),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
-    ).
+    );
     mesh.rotation.x = -Math.PI / 2.
-    mesh.position.set(x, 6, y).
-    this.scene.add(mesh).
-    this.markers.push({ mesh, life: 0, maxLife: 0.45 }).
+    mesh.position.set(x, 6, y);
+    this.scene.add(mesh);
+    this.markers.push({ mesh, life: 0, maxLife: 0.45 });
   }
 
   setFocusTarget(unit) {
@@ -751,48 +751,48 @@ export class Scene3D {
         new THREE.MeshBasicMaterial({
           color: 0x46d39a, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false,
         }),
-      ).
+      );
       this.focus.rotation.x = -Math.PI / 2.
       this.focus.position.y = 5.
-      this.scene.add(this.focus).
+      this.scene.add(this.focus);
     }
-    this.focus.visible = Boolean(unit).
-    if (unit) this.focus.position.set(unit.x, 5, unit.y).
+    this.focus.visible = Boolean(unit);
+    if (unit) this.focus.position.set(unit.x, 5, unit.y);
   }
 
   updateCamera(player, dt, edgeScroll = null) {
-    if (!player || !this.camera || !this.cameraFocus) return.
-    const arena = this.arena || { x: 0, y: 0, w: 3200, h: 1900 }.
+    if (!player || !this.camera || !this.cameraFocus) return;
+    const arena = this.arena || { x: 0, y: 0, w: 3200, h: 1900 };
 
     if (edgeScroll) {
-      const speed = 2200 * dt.
-      this.cameraFocus.x += edgeScroll.x * speed.
-      this.cameraFocus.z += edgeScroll.y * speed.
+      const speed = 2200 * dt;
+      this.cameraFocus.x += edgeScroll.x * speed;
+      this.cameraFocus.z += edgeScroll.y * speed;
 
-      this.cameraFocus.x = Math.max(arena.x + 120, Math.min(arena.x + arena.w - 120, this.cameraFocus.x)).
-      this.cameraFocus.z = Math.max(arena.y + 120, Math.min(arena.y + arena.h - 120, this.cameraFocus.z)).
+      this.cameraFocus.x = Math.max(arena.x + 120, Math.min(arena.x + arena.w - 120, this.cameraFocus.x));
+      this.cameraFocus.z = Math.max(arena.y + 120, Math.min(arena.y + arena.h - 120, this.cameraFocus.z));
     } else {
-      const focusX = player.x.
-      const focusZ = player.y.
-      const clampX = Math.max(arena.x + 120, Math.min(arena.x + arena.w - 120, focusX)).
-      const clampZ = Math.max(arena.y + 120, Math.min(arena.y + arena.h - 120, focusZ)).
-      this.focusTarget.set(clampX, 0, clampZ).
-      const k = 1 - Math.pow(0.0015, dt).
-      this.cameraFocus.lerp(this.focusTarget, k).
+      const focusX = player.x;
+      const focusZ = player.y;
+      const clampX = Math.max(arena.x + 120, Math.min(arena.x + arena.w - 120, focusX));
+      const clampZ = Math.max(arena.y + 120, Math.min(arena.y + arena.h - 120, focusZ));
+      this.focusTarget.set(clampX, 0, clampZ);
+      const k = 1 - Math.pow(0.0015, dt);
+      this.cameraFocus.lerp(this.focusTarget, k);
     }
 
     const zoom = this.zoom || 1.
-    const distance = this.cameraDistance / zoom.
+    const distance = this.cameraDistance / zoom;
 
-    const pitchRad = THREE.MathUtils.degToRad(this.cameraPitch).
-    const height = distance * Math.tan(pitchRad).
+    const pitchRad = THREE.MathUtils.degToRad(this.cameraPitch);
+    const height = distance * Math.tan(pitchRad);
 
     this.camera.position.set(
       this.cameraFocus.x,
       height,
       this.cameraFocus.z + distance,
-    ).
-    this.camera.lookAt(this.cameraFocus.x, 0, this.cameraFocus.z).
+    );
+    this.camera.lookAt(this.cameraFocus.x, 0, this.cameraFocus.z);
   }
 
   setCameraConfig({ zoom = 1, fov = 42, distance = 850, pitch = 30 } = {}) {
@@ -800,8 +800,8 @@ export class Scene3D {
     this.cameraDistance = distance > 0 ? distance : 850.
     this.cameraPitch = pitch > 0 ? pitch : 30.
     if (this.camera.fov !== fov) {
-      this.camera.fov = fov.
-      this.camera.updateProjectionMatrix().
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
     }
   }
 }
