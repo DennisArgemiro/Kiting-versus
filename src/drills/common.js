@@ -107,36 +107,30 @@ export function applyInput(player, input, world, onMoveMarker) {
   for (const click of input.takeClicks()) {
     const unit = unitUnderCursor(world, click.x, click.y, 150);
     const attackMove = input.attackMoveActive;
-    const targetNearest = config.combat().attackMoveTargetNearest !== false;
     input.lastClick = { button: click.button, x: click.x, y: click.y, onUnit: Boolean(unit) };
 
     if (click.button === 2) {
       if (attackMove) {
         input.consumedAttackMove = true;
+        // Quando A está segurado: sempre ataque o inimigo mais próximo do clique
         if (world && world.nearest) {
           const enemyNear = world.nearest(click.x, click.y, (player.attackRange || 550) * 1.3, (u) => u && u.alive && u.team !== player.team);
-          if (targetNearest && enemyNear && enemyNear.alive) {
+          if (enemyNear && enemyNear.alive) {
             controller.attackUnit(enemyNear);
             events.ordered = ORDER.ATTACK;
             onMoveMarker?.(enemyNear.x, enemyNear.y, 0xff5f6d);
-          } else if (unit && unit.alive) {
-            controller.attackUnit(unit);
-            events.ordered = ORDER.ATTACK;
-            onMoveMarker?.(unit.x, unit.y, 0xff5f6d);
           } else {
+            // Nenhum inimigo próximo do clique: ataque-move para o ponto
             controller.attackMoveTo(click.x, click.y);
             events.ordered = ORDER.ATTACK_MOVE;
             onMoveMarker?.(click.x, click.y, 0xffb454);
           }
-        } else if (unit && unit.alive) {
-          controller.attackUnit(unit);
-          events.ordered = ORDER.ATTACK;
-          onMoveMarker?.(unit.x, unit.y, 0xff5f6d);
         } else {
           controller.attackMoveTo(click.x, click.y);
           events.ordered = ORDER.ATTACK_MOVE;
           onMoveMarker?.(click.x, click.y, 0xffb454);
         }
+        // Removido o fallback para unitUnderCursor quando A está segurado
       } else if (unit && unit.alive) {
         controller.attackUnit(unit);
         events.ordered = ORDER.ATTACK;
@@ -149,6 +143,7 @@ export function applyInput(player, input, world, onMoveMarker) {
     } else if (click.button === 0) {
       if (attackMove) {
         input.consumedAttackMove = true;
+        // Quando A está segurado: sempre ataque o inimigo mais próximo do clique
         if (world && world.nearest) {
           const enemyNear = world.nearest(click.x, click.y, (player.attackRange || 550) * 1.3, (u) => u && u.alive && u.team !== player.team);
           if (enemyNear && enemyNear.alive) {
@@ -156,19 +151,17 @@ export function applyInput(player, input, world, onMoveMarker) {
             events.ordered = ORDER.ATTACK;
             onMoveMarker?.(enemyNear.x, enemyNear.y, 0xff5f6d);
           } else {
+            // Nenhum inimigo próximo do clique: ataque-move para o ponto
             controller.attackMoveTo(click.x, click.y);
             events.ordered = ORDER.ATTACK_MOVE;
             onMoveMarker?.(click.x, click.y, 0xffb454);
           }
-        } else if (unit && unit.alive) {
-          controller.attackUnit(unit);
-          events.ordered = ORDER.ATTACK;
-          onMoveMarker?.(unit.x, unit.y, 0xff5f6d);
         } else {
           controller.attackMoveTo(click.x, click.y);
           events.ordered = ORDER.ATTACK_MOVE;
           onMoveMarker?.(click.x, click.y, 0xffb454);
         }
+        // Removido o fallback para unitUnderCursor quando A está segurado
       } else if (unit && unit.alive) {
         controller.attackUnit(unit);
         events.ordered = ORDER.ATTACK;

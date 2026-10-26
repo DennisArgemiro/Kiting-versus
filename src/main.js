@@ -570,7 +570,12 @@ function renderDrillCard(drill) {
       pip.className = "pip";
       btn.appendChild(pip);
     }
-    btn.addEventListener("click", () => startDrill(drill, level));
+    btn.addEventListener("click", () => {
+      // resolve novamente pelo id: os params podem ter mudado (tela de balanceamento)
+      const freshDrill = app.byId.get(drill.id) || drill;
+      const freshLevel = freshDrill.levels.find((lv) => Number(lv.index) === Number(level.index)) || level;
+      startDrill(freshDrill, freshLevel);
+    });
     grid.appendChild(btn);
   }
 
@@ -919,6 +924,8 @@ function drawHistory(drill) {
     ctx.fill();
   });
 }
+
+
 
 function renderStats() {
   const summary = store.summary();
@@ -1527,3 +1534,5 @@ function updateAttributesHud(player, containerSelector) {
 }
 
 boot();
+
+

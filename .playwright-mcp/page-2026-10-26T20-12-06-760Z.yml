@@ -1,0 +1,162 @@
+- generic [ref=f3e3]:
+  - generic [ref=f3e4]:
+    - generic [ref=f3e5]:
+      - generic [ref=f3e6]: SG
+      - generic [ref=f3e7]:
+        - heading [level=1] [ref=f3e8]:
+          - text: Kiting Versus
+          - emphasis [ref=f3e9]: Web
+        - paragraph [ref=f3e10]: Treino de kiting e esquiva no navegador
+    - generic [ref=f3e11]:
+      - generic [ref=f3e12]:
+        - generic [ref=f3e13]: Campanha
+        - combobox "Campanha" [ref=f3e14]:
+          - option "Carry" [selected]
+      - button "Arena" [ref=f3e15] [cursor=pointer]
+      - button "Estatísticas" [ref=f3e16] [cursor=pointer]
+      - button "Admin" [ref=f3e17] [cursor=pointer]
+  - generic [ref=f3e18]:
+    - generic [ref=f3e19]:
+      - generic [ref=f3e20]:
+        - heading "Treinos" [level=2] [ref=f3e21]
+        - generic [ref=f3e22]:
+          - button "Todos" [ref=f3e23] [cursor=pointer]
+          - button "Kiting" [ref=f3e24] [cursor=pointer]
+          - button "Esquiva" [ref=f3e25] [cursor=pointer]
+      - generic [ref=f3e26]:
+        - article [ref=f3e27]:
+          - generic [ref=f3e28]:
+            - generic [ref=f3e29]:
+              - generic [ref=f3e30]: Kiting
+              - heading "Kiting de Separação" [level=3] [ref=f3e31]
+            - generic [ref=f3e32]: 10 níveis
+          - paragraph [ref=f3e33]: Dummies de 3 hits - Elimine todos para passar de nível
+          - paragraph [ref=f3e34]: Destrua dummies que aparecem ao redor de você. Cada nível exige eliminar uma quantidade específica de dummies para avançar. Os dummies somem com o tempo, então seja rápido!
+          - generic [ref=f3e35]:
+            - button "1" [ref=f3e36] [cursor=pointer]
+            - button "2" [disabled] [ref=f3e37]
+            - button "3" [disabled] [ref=f3e38]
+            - button "4" [disabled] [ref=f3e39]
+            - button "5" [disabled] [ref=f3e40]
+            - button "6" [disabled] [ref=f3e41]
+            - button "7" [disabled] [ref=f3e42]
+            - button "8" [disabled] [ref=f3e43]
+            - button "9" [disabled] [ref=f3e44]
+            - button "10" [disabled] [ref=f3e45]
+          - generic [ref=f3e46]:
+            - generic [ref=f3e47]: Melhor pontuação
+            - generic [ref=f3e48]: "0"
+        - article [ref=f3e49]:
+          - generic [ref=f3e50]:
+            - generic [ref=f3e51]:
+              - generic [ref=f3e52]: Kiting
+              - heading "Kiting Defensivo" [level=3] [ref=f3e53]
+            - generic [ref=f3e54]: 10 níveis
+          - paragraph [ref=f3e55]: Máxima distância, DPS máximo
+          - paragraph [ref=f3e56]: Inimigos te perseguem e atiram de longe. Você precisa manter o maior alcance possível enquanto ainda causa dano — o kiting de verdade.
+          - generic [ref=f3e57]:
+            - button "1" [ref=f3e58] [cursor=pointer]
+            - button "2" [disabled] [ref=f3e59]
+            - button "3" [disabled] [ref=f3e60]
+            - button "4" [disabled] [ref=f3e61]
+            - button "5" [disabled] [ref=f3e62]
+            - button "6" [disabled] [ref=f3e63]
+            - button "7" [disabled] [ref=f3e64]
+            - button "8" [disabled] [ref=f3e65]
+            - button "9" [disabled] [ref=f3e66]
+            - button "10" [disabled] [ref=f3e67]
+          - generic [ref=f3e68]:
+            - generic [ref=f3e69]: Melhor pontuação
+            - generic [ref=f3e70]: "0"
+        - article [ref=f3e71]:
+          - generic [ref=f3e72]:
+            - generic [ref=f3e73]:
+              - generic [ref=f3e74]: Kiting
+              - heading "Supervivencia" [level=3] [ref=f3e75]
+            - generic [ref=f3e76]: 1 níveis
+          - paragraph [ref=f3e77]: Sobreviva o maior tempo possível
+          - paragraph [ref=f3e78]: "Sobrevivencia pura: dummies te caçam constantemente. Você perde 40 de vida a cada 0.5 segundos, mas elimina dummies para recuperar 120 de vida. Cada dummy morto te mantém vivo por mais tempo. Quantos dummies voce consegue eliminar antes de morrer?"
+          - button "1" [ref=f3e80] [cursor=pointer]
+          - generic [ref=f3e81]:
+            - generic [ref=f3e82]: Melhor pontuação
+            - generic [ref=f3e83]: "0"
+        - article [ref=f3e84]:
+          - generic [ref=f3e85]:
+            - generic [ref=f3e86]:
+              - generic [ref=f3e87]: Esquiva
+              - heading "Esquiva e Contragolpe" [level=3] [ref=f3e88]
+            - generic [ref=f3e89]: 10 níveis
+          - paragraph [ref=f3e90]: Desvie e transforme a esquiva em dano
+          - paragraph [ref=f3e91]: "Além de sobreviver, você tem 3 segundos depois de cada esquiva para punir o inimigo. É o padrão real: desviar e contra-atacar."
+          - generic [ref=f3e92]:
+            - button "1" [ref=f3e93] [cursor=pointer]
+            - button "2" [disabled] [ref=f3e94]
+            - button "3" [disabled] [ref=f3e95]
+            - button "4" [disabled] [ref=f3e96]
+            - button "5" [disabled] [ref=f3e97]
+            - button "6" [disabled] [ref=f3e98]
+            - button "7" [disabled] [ref=f3e99]
+            - button "8" [disabled] [ref=f3e100]
+            - button "9" [disabled] [ref=f3e101]
+            - button "10" [disabled] [ref=f3e102]
+          - generic [ref=f3e103]:
+            - generic [ref=f3e104]: Melhor pontuação
+            - generic [ref=f3e105]: "0"
+    - complementary [ref=f3e106]:
+      - generic [ref=f3e107]:
+        - heading "Campanha selecionada" [level=3] [ref=f3e108]
+        - generic [ref=f3e110]:
+          - generic [ref=f3e111]: Carry
+          - generic [ref=f3e112]: the Test Carry
+      - generic [ref=f3e113]:
+        - heading "Como jogar" [level=3] [ref=f3e114]
+        - list [ref=f3e115]:
+          - listitem [ref=f3e116]:
+            - generic [ref=f3e117]: Botão dir.
+            - text: "no chão: andar até o ponto"
+          - listitem [ref=f3e118]:
+            - generic [ref=f3e119]: Botão dir.
+            - text: "no inimigo: atacar"
+          - listitem [ref=f3e120]:
+            - generic [ref=f3e121]: A
+            - text: "+ clique: atacar e avançar"
+          - listitem [ref=f3e122]:
+            - generic [ref=f3e123]: S
+            - text: parar a ação
+          - listitem [ref=f3e124]:
+            - generic [ref=f3e125]: Q
+            - generic [ref=f3e126]: W
+            - generic [ref=f3e127]: E
+            - generic [ref=f3e128]: R
+            - text: habilidades
+          - listitem [ref=f3e129]:
+            - generic [ref=f3e130]: Mouse
+            - text: mirar
+          - listitem [ref=f3e131]:
+            - generic [ref=f3e132]: Esc
+            - text: sair do treino
+        - paragraph [ref=f3e133]:
+          - text: "Movimentação igual ao League:"
+          - emphasis [ref=f3e134]: botão direito
+          - text: . Para kitar, clique com o botão direito no inimigo, espere o ataque sair, clique com o botão direito no chão para recuar, e repita.
+        - paragraph [ref=f3e135]:
+          - text: O anel azul é seu alcance de ataque. O anel vermelho é o alcance inimigo. Você acerta atacando e sobrevive saindo do vermelho — é isso que separa
+          - emphasis [ref=f3e136]: atirar
+          - text: de
+          - emphasis [ref=f3e137]: kitar
+          - text: .
+      - generic [ref=f3e138]:
+        - heading "Progresso" [level=3] [ref=f3e139]
+        - generic [ref=f3e140]:
+          - generic [ref=f3e141]:
+            - generic [ref=f3e142]: Treinos concluídos
+            - generic [ref=f3e143]: 0/4
+          - generic [ref=f3e144]:
+            - generic [ref=f3e145]: Níveis vencidos
+            - generic [ref=f3e146]: 1/31
+          - generic [ref=f3e147]:
+            - generic [ref=f3e148]: Melhor pontuação
+            - generic [ref=f3e149]: "0"
+          - generic [ref=f3e150]:
+            - generic [ref=f3e151]: Sessões
+            - generic [ref=f3e152]: "2"

@@ -183,6 +183,9 @@ kbd {
 .hud-coach {
   margin-top: 5px; font-size: 12px; color: var(--muted);
   max-width: 340px; line-height: 1.35;
+  /* Linha única fixa: evitar que o texto quebre em 2 linhas e redimensione o canvas (flicker) */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  height: 1.35em;
 }
 .hud-coach.is-alert { color: var(--warn); }
 .hud-right { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
@@ -395,6 +398,54 @@ kbd {
 @media (max-width: 720px) {
   #screen-admin { padding: 10px; }
   .admin-head, .admin-body, .admin-foot, .admin-tabs { padding-left: 16px; padding-right: 16px; }
+}
+
+/* ───────────────────────── admin tuning / balanciamento ───────────────────────── */
+.tuning-panel {
+  display: flex; gap: 24px; flex: 1; min-height: 0; overflow: auto;
+}
+.tuning-left {
+  width: 300px; flex-shrink: 0;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 16px; display: flex; flex-direction: column; gap: 14px; overflow: auto;
+}
+.admin-drill-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--panel-2); cursor: pointer; font-size: 13px; text-align: left;
+  color: var(--text); width: 100%;
+}
+.admin-drill-btn:hover { border-color: var(--accent-dim); }
+.admin-drill-btn.is-on { border-color: var(--accent); background: rgba(78,161,255,.12); }
+.admin-drill-btn small { color: var(--muted); font-size: 11px; }
+
+.tuning-right { flex: 1; min-width: 0; }
+.tuning-group { margin-bottom: 18px; }
+.tuning-group h4 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent);
+  border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 10px;
+}
+.tuning-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.tuning-field {
+  display: grid; gap: 5px; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 9px; padding: 9px 11px;
+}
+.tuning-field label { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.tuning-field label b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.tuning-field input[type="number"], .tuning-field input[type="text"], .tuning-field select {
+  width: 100%; background: var(--panel-3); border: 1px solid var(--line); color: var(--text);
+  border-radius: 7px; padding: 6px 8px; font: 500 12.5px var(--mono);
+}
+.tuning-field input[type="range"] { width: 100%; accent-color: var(--accent); }
+.tuning-field.is-modified { border-color: var(--accent-dim); }
+.tuning-list-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px;
+}
+.admin-empty { color: var(--muted); font-size: 13px; padding: 24px; text-align: center; }
+
+@media (max-width: 900px) {
+  .tuning-panel { flex-direction: column; overflow: auto; }
+  .tuning-left { width: 100%; }
 }
 
 /* ───────────────────────── admin login ───────────────────────── */

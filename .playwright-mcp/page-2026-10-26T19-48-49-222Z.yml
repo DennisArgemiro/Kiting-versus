@@ -1,0 +1,63 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: SG
+      - generic [ref=e7]:
+        - heading [level=1] [ref=e8]:
+          - text: Kiting Versus
+          - emphasis [ref=e9]: Web
+        - paragraph [ref=e10]: Treino de kiting e esquiva no navegador
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]: Campanha
+        - combobox "Campanha" [ref=e14]
+      - button "Arena" [ref=e15] [cursor=pointer]
+      - button "Estatísticas" [ref=e16] [cursor=pointer]
+      - button "Admin" [ref=e17] [cursor=pointer]
+  - generic [ref=e18]:
+    - generic [ref=e20]:
+      - heading "Treinos" [level=2] [ref=e21]
+      - generic [ref=e22]:
+        - button "Todos" [ref=e23] [cursor=pointer]
+        - button "Kiting" [ref=e24] [cursor=pointer]
+        - button "Esquiva" [ref=e25] [cursor=pointer]
+    - complementary [ref=e26]:
+      - heading "Campanha selecionada" [level=3] [ref=e28]
+      - generic [ref=e29]:
+        - heading "Como jogar" [level=3] [ref=e30]
+        - list [ref=e31]:
+          - listitem [ref=e32]:
+            - generic [ref=e33]: Botão dir.
+            - text: "no chão: andar até o ponto"
+          - listitem [ref=e34]:
+            - generic [ref=e35]: Botão dir.
+            - text: "no inimigo: atacar"
+          - listitem [ref=e36]:
+            - generic [ref=e37]: A
+            - text: "+ clique: atacar e avançar"
+          - listitem [ref=e38]:
+            - generic [ref=e39]: S
+            - text: parar a ação
+          - listitem [ref=e40]:
+            - generic [ref=e41]: Q
+            - generic [ref=e42]: W
+            - generic [ref=e43]: E
+            - generic [ref=e44]: R
+            - text: habilidades
+          - listitem [ref=e45]:
+            - generic [ref=e46]: Mouse
+            - text: mirar
+          - listitem [ref=e47]:
+            - generic [ref=e48]: Esc
+            - text: sair do treino
+        - paragraph [ref=e49]:
+          - text: "Movimentação igual ao League:"
+          - emphasis [ref=e50]: botão direito
+          - text: . Para kitar, clique com o botão direito no inimigo, espere o ataque sair, clique com o botão direito no chão para recuar, e repita.
+        - paragraph [ref=e51]:
+          - text: O anel azul é seu alcance de ataque. O anel vermelho é o alcance inimigo. Você acerta atacando e sobrevive saindo do vermelho — é isso que separa
+          - emphasis [ref=e52]: atirar
+          - text: de
+          - emphasis [ref=e53]: kitar
+          - text: .
+      - heading "Progresso" [level=3] [ref=e55]

@@ -1,0 +1,37 @@
+[     185ms] [VERBOSE] [DOM] Password forms should have (optionally hidden) username fields for accessibility: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:5173/:0
+[    1268ms] [ERROR] WebSocket connection to 'ws://localhost:3002/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js:1561
+[    3021ms] [ERROR] WebSocket connection to 'ws://localhost:3002/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js:1561
+[    8302ms] [ERROR] WebSocket connection to 'ws://localhost:3002/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js:1561
+[   14070ms] [ERROR] WebSocket connection to 'ws://localhost:3002/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js:1561
+[   21033ms] [ERROR] WebSocket connection to 'ws://localhost:3002/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js:1561
+[   29152ms] [ERROR] WebSocket connection to 'ws://localhost:3002/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js:1561
+[   37375ms] [ERROR] WebSocket connection to 'ws://localhost:3002/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js:1561
+[   45045ms] [ERROR] WebSocket connection to 'ws://localhost:3002/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js:1561
+[   48260ms] [ERROR] drill update error TypeError: Cannot read properties of undefined (reading 'orders')
+    at SurvivalDrill.update (http://localhost:5173/src/drills/kiting.js:807:40)
+    at Loop.update (http://localhost:5173/src/main.js:671:17)
+    at Loop.frame (http://localhost:5173/src/core/loop.js:49:12) TypeError: Cannot read properties of undefined (reading 'orders')
+    at SurvivalDrill.update (http://localhost:5173/src/drills/kiting.js:807:40)
+    at Loop.update (http://localhost:5173/src/main.js:671:17)
+    at Loop.frame (http://localhost:5173/src/core/loop.js:49:12) @ http://localhost:5173/src/main.js:670
+[   48645ms] [ERROR] drill update error TypeError: Cannot read properties of undefined (reading 'orders')
+    at SurvivalDrill.update (http://localhost:5173/src/drills/kiting.js:807:40)
+    at Loop.update (http://localhost:5173/src/main.js:671:17)
+    at Loop.frame (http://localhost:5173/src/core/loop.js:49:12) TypeError: Cannot read properties of undefined (reading 'orders')
+    at SurvivalDrill.update (http://localhost:5173/src/drills/kiting.js:807:40)
+    at Loop.update (http://localhost:5173/src/main.js:671:17)
+    at Loop.frame (http://localhost:5173/src/core/loop.js:49:12) @ http://localhost:5173/src/main.js:670
+[   48832ms] [ERROR] drill update error TypeError: Cannot read properties of undefined (reading 'orders')
+    at SurvivalDrill.update (http://localhost:5173/src/drills/kiting.js:807:40)
+    at Loop.update (http://localhost:5173/src/main.js:671:17)
+    at Loop.frame (http://localhost:5173/src/core/loop.js:49:12) TypeError: Cannot read properties of undefined (reading 'orders')
+    at SurvivalDrill.update (http://localhost:5173/src/drills/kiting.js:807:40)
+    at Loop.update (http://localhost:5173/src/main.js:671:17)
+    at Loop.frame (http://localhost:5173/src/core/loop.js:49:12) @ http://localhost:5173/src/main.js:670
+[   49031ms] [ERROR] drill update error TypeError: Cannot read properties of undefined (reading 'orders')
+    at SurvivalDrill.update (http://localhost:5173/src/drills/kiting.js:807:40)
+    at Loop.update (http://localhost:5173/src/main.js:671:17)
+    at Loop.frame (http://localhost:5173/src/core/loop.js:49:12) TypeError: Cannot read properties of undefined (reading 'orders')
+    at SurvivalDrill.update (http://localhost:5173/src/drills/kiting.js:807:40)
+    at Loop.update (http://localhost:5173/src/main.js:671:17)
+    at Loop.frame (http://localhost:5173/src/core/loop.js:49:12) @ http://localhost:5173/src/main.js:670

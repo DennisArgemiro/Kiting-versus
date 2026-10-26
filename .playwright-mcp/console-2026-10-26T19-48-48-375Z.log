@@ -1,0 +1,4 @@
+[     696ms] [VERBOSE] [DOM] Password forms should have (optionally hidden) username fields for accessibility: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:5173/:0
+[     884ms] [ERROR] WebSocket connection to 'ws://localhost:3002/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js:1561
+[    2259ms] [ERROR] WebSocket connection to 'ws://localhost:3002/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js:1561
+[    4843ms] [ERROR] WebSocket connection to 'ws://localhost:3002/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js:1561

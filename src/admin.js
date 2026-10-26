@@ -7,6 +7,10 @@
  * which is printed as the input placeholder.
  */
 import { config, DEFAULTS, ARENA_LIMITS } from "./config.js";
+import {
+  loadOverrides, saveOverride, clearOverrides, exportOverrides, importOverrides,
+  fieldsFor, listGroups, getByPath, setByPath,
+} from "./drills/tuning.js";
 
 const TABS = [
   { id: "map", label: "Mapa" },
@@ -16,6 +20,7 @@ const TABS = [
   { id: "drills", label: "Treinos" },
   { id: "modos", label: "Modos" },
   { id: "kitingVersus", label: "Dados REA" },
+  { id: "tuning", label: "Balanciamento" },
 ];
 
 const number = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -1146,6 +1151,405 @@ export function createAdmin({ app, onApply }) {
     return root;
   }
 
+  // ── Balanciamento (tuning) ────────────────────────────────────────────
+
+  function tuningPanel() {
+    const root = document.createElement("div");
+    root.className = "admin-section tuning-panel";
+
+    const header = document.createElement("div");
+    header.className = "admin-section-head";
+    header.innerHTML = `<h3>Balanciamento de Treinos</h3><p>Edite os valores de todos os treinos. As mudanças são salvas no navegador e aplicadas na hora.</p>`;
+    root.appendChild(header);
+
+    const tuningState = { drillId: null, levelIndex: 1, scope: "level" };
+
+    function tuningDrill() {
+      return app.byId.get(tuningState.drillId) || app.drills[0] || null;
+    }
+
+    function tuningLevel() {
+      const drill = tuningDrill();
+      if (!drill) return null;
+      const found = drill.levels.find((lv) => Number(lv.index) === Number(tuningState.levelIndex));
+      return found || drill.levels[0] || null;
+    }
+
+    function tuningEffectiveParams() {
+      const drill = tuningDrill();
+      const level = tuningLevel();
+      if (!drill || !level) return {};
+      const storeData = loadOverrides();
+      const perDrill = storeData[drill.id] || {};
+      let params = { ...(level.params || {}) };
+      const levelPatch = perDrill[String(level.index)] || {};
+      const allPatch = perDrill.all || {};
+      params = mergeDeep(params, levelPatch);
+      params = mergeDeep(params, allPatch);
+      return params;
+    }
+
+    function mergeDeep(base, patch) {
+      if (!patch || typeof patch !== "object" || Array.isArray(patch)) return patch ?? base;
+      const out = Array.isArray(base) ? [...base] : { ...(base || {}) };
+      for (const [key, value] of Object.entries(patch)) {
+        if (value && typeof value === "object" && !Array.isArray(value) && out[key] && typeof out[key] === "object" && !Array.isArray(out[key])) {
+          out[key] = mergeDeep(out[key], value);
+        } else {
+          out[key] = value;
+        }
+      }
+      return out;
+    }
+
+    function renderTuningDrills(box) {
+      box.innerHTML = "";
+      for (const drill of app.drills) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `admin-drill-btn${drill.id === tuningState.drillId ? " is-on" : ""}`;
+        const overridden = Object.keys(loadOverrides()[drill.id] || {}).length;
+        btn.innerHTML = `<span>${drill.name}</span><small>${drill.levels.length} níveis${overridden ? " • edit." : ""}</small>`;
+        btn.addEventListener("click", () => {
+          tuningState.drillId = drill.id;
+          tuningState.levelIndex = drill.levels[0]?.index || 1;
+          renderTuningScreen();
+        });
+        box.appendChild(btn);
+      }
+    }
+
+    function renderTuningLevels(select) {
+      const drill = tuningDrill();
+      if (!select || !drill) return;
+      select.innerHTML = "";
+      for (const level of drill.levels) {
+        const option = document.createElement("option");
+        option.value = String(level.index);
+        option.textContent = `Nível ${level.index}`;
+        select.appendChild(option);
+      }
+      select.value = String(tuningState.levelIndex);
+    }
+
+    function tuningInputFor(field, value, onChange) {
+      const wrap = document.createElement("div");
+      wrap.className = "admin-field";
+
+      const label = document.createElement("label");
+      const name = document.createElement("span");
+      name.textContent = field.label;
+      const shown = document.createElement("b");
+      label.append(name, shown);
+
+      const format = (v) => {
+        if (field.zeroIsDefault && (v === 0 || v === undefined || v === null)) return "padrão";
+        if (v === undefined || v === null || v === "") return "padrão";
+        if (field.type === "bool") return v ? "sim" : "não";
+        if (field.percent) return `${Math.round(Number(v) * 1000) / 10}%`;
+        if (typeof v === "number") return String(Math.round(v * 1000) / 1000);
+        return String(v);
+      };
+
+      let input;
+      if (field.type === "bool") {
+        input = document.createElement("select");
+        for (const opt of [true, false]) {
+          const option = document.createElement("option");
+          option.value = String(opt);
+          option.textContent = opt ? "Sim" : "Não";
+          input.appendChild(option);
+        }
+        input.value = String(Boolean(value));
+        input.addEventListener("change", () => {
+          shown.textContent = format(input.value === "true");
+          onChange(input.value === "true");
+        });
+      } else if (field.type === "select") {
+        input = document.createElement("select");
+        for (const opt of field.options || []) {
+          const option = document.createElement("option");
+          option.value = opt;
+          option.textContent = opt;
+          input.appendChild(option);
+        }
+        input.value = value ?? "";
+        input.addEventListener("change", () => {
+          shown.textContent = format(input.value);
+          onChange(input.value);
+        });
+      } else if (field.type === "text") {
+        input = document.createElement("input");
+        input.type = "text";
+        input.value = value ?? "";
+        input.addEventListener("change", () => {
+          shown.textContent = format(input.value);
+          onChange(input.value);
+        });
+      } else {
+        input = document.createElement("input");
+        input.type = "number";
+        if (field.min !== undefined) input.min = field.min;
+        if (field.max !== undefined) input.max = field.max;
+        input.step = field.step ?? 1;
+        if (value === undefined || value === null) {
+          input.placeholder = "padrão";
+          input.value = "";
+        } else {
+          input.value = typeof value === "number" ? Math.round(value * 10000) / 10000 : value;
+        }
+        input.addEventListener("change", () => {
+          if (input.value === "") {
+            shown.textContent = format(undefined);
+            onChange(undefined);
+            return;
+          }
+          const parsed = Number(input.value);
+          const safe = Number.isFinite(parsed) ? parsed : 0;
+          shown.textContent = format(safe);
+          onChange(safe);
+        });
+      }
+
+      shown.textContent = format(value);
+      wrap.append(label, input);
+      return { wrap, shown, input };
+    }
+
+    function renderTuningFields(box) {
+      box.innerHTML = "";
+
+      const drill = tuningDrill();
+      const level = tuningLevel();
+      if (!drill || !level) {
+        box.innerHTML = '<div class="admin-empty">Nenhum treino selecionado.</div>';
+        return;
+      }
+
+      const params = tuningEffectiveParams();
+      const fields = fieldsFor(drill, { ...level, params });
+      if (!fields.length) {
+        box.innerHTML = '<div class="admin-empty">Este treino não expõe valores editáveis ainda.</div>';
+        return;
+      }
+
+      const storeData = loadOverrides();
+      const perDrill = storeData[drill.id] || {};
+      const currentPatch = tuningState.scope === "all" ? perDrill.all : perDrill[String(level.index)];
+
+      const groups = new Map();
+      for (const field of fields) {
+        if (!groups.has(field.group)) groups.set(field.group, []);
+        groups.get(field.group).push(field);
+      }
+
+      const writeValue = (field, value) => {
+        const drillId = drill.id;
+        const key = tuningState.scope === "all" ? "all" : String(level.index);
+        const data = loadOverrides();
+        const patch = { ...(data[drillId]?.[key] || {}) };
+        setByPath(patch, field.path, value);
+        saveOverride(drillId, key, patch);
+        onApply();
+        renderTuningScreen();
+        flash(`Alterado: ${field.label} = ${field.percent ? `${Math.round(value * 1000) / 10}%` : value}`);
+      };
+
+      for (const [groupName, groupFields] of groups) {
+        const section = document.createElement("div");
+        section.className = "admin-section tuning-group";
+        const title = document.createElement("h4");
+        title.textContent = groupName;
+        section.appendChild(title);
+
+        const grid = document.createElement("div");
+        grid.className = "admin-grid";
+        for (const field of groupFields) {
+          const value = getByPath(params, field.path);
+          const modified = currentPatch && getByPath(currentPatch, field.path) !== undefined;
+          const { wrap } = tuningInputFor(field, value, (v) => writeValue(field, v));
+          if (modified) wrap.classList.add("is-modified");
+          grid.appendChild(wrap);
+        }
+        section.appendChild(grid);
+        box.appendChild(section);
+      }
+
+      const groupsInfo = listGroups(drill, { ...level, params });
+      for (const info of groupsInfo) {
+        const section = document.createElement("div");
+        section.className = "admin-section tuning-group";
+        const head = document.createElement("div");
+        head.className = "admin-list-head";
+        const title = document.createElement("h4");
+        title.textContent = `${info.label} (${info.items.length})`;
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "btn btn-ghost btn-sm";
+        add.textContent = `+ Adicionar ${info.key === "enemies" ? "inimigo" : "caster"}`;
+        add.addEventListener("click", () => {
+          const template = info.key === "enemies"
+            ? { role: "partner", behaviour: "melee", damageScale: 0.5, attackSpeedScale: 1, speedScale: 1 }
+            : { hp: 1500, attackDamage: 50, moveSpeed: 300, range: 900, cooldown: 3, casterTimer: 1 };
+          const list = [...(info.items || []), template];
+          const field = { path: [info.key], label: `${info.label} (lista)` };
+          writeValue(field, list);
+        });
+        head.append(title, add);
+        section.appendChild(head);
+
+        const list = document.createElement("div");
+        list.className = "admin-grid";
+        info.items.forEach((_, i) => {
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "btn btn-danger btn-sm";
+          remove.textContent = `Remover ${info.key === "enemies" ? "inimigo" : "caster"} ${i + 1}`;
+          remove.addEventListener("click", () => {
+            const next = [...(info.items || [])];
+            next.splice(i, 1);
+            writeValue({ path: [info.key], label: `${info.label} (lista)` }, next);
+          });
+          list.appendChild(remove);
+        });
+        section.appendChild(list);
+        box.appendChild(section);
+      }
+    }
+
+    function renderTuningScreen() {
+      if (!tuningState.drillId || !app.byId.has(tuningState.drillId)) {
+        tuningState.drillId = app.drills[0]?.id || null;
+      }
+
+      // Left side: drill list + level selector + scope
+      const left = document.createElement("div");
+      left.className = "tuning-left";
+      const drillBox = document.createElement("div");
+      drillBox.id = "admin-tuning-drills";
+      left.appendChild(drillBox);
+
+      const levelLabel = document.createElement("label");
+      levelLabel.className = "admin-field";
+      levelLabel.innerHTML = `<span>Nível</span><select id="admin-tuning-level"></select>`;
+      left.appendChild(levelLabel);
+
+      const scopeLabel = document.createElement("label");
+      scopeLabel.className = "admin-field";
+      scopeLabel.innerHTML = `<span>Editar</span><select id="admin-tuning-scope"><option value="level">Somente o nível selecionado</option><option value="all">Todos os níveis do treino</option></select>`;
+      left.appendChild(scopeLabel);
+
+      const actions = document.createElement("div");
+      actions.className = "admin-actions";
+      actions.innerHTML = `
+        <button id="admin-tuning-apply-all" class="btn btn-sm">Aplicar este nível em todos</button>
+        <button id="admin-tuning-reset-level" class="btn btn-ghost btn-sm">Restaurar este nível</button>
+        <button id="admin-tuning-reset-drill" class="btn btn-ghost btn-sm">Restaurar este treino</button>
+      `;
+      left.appendChild(actions);
+
+      const exportImport = document.createElement("div");
+      exportImport.className = "admin-actions";
+      exportImport.innerHTML = `
+        <button id="admin-tuning-export" class="btn btn-ghost btn-sm">Exportar JSON</button>
+        <button id="admin-tuning-import" class="btn btn-ghost btn-sm">Importar JSON</button>
+        <button id="admin-tuning-reset-all" class="btn btn-danger btn-sm">Restaurar tudo</button>
+        <input id="admin-tuning-import-file" type="file" accept="application/json" hidden />
+      `;
+      left.appendChild(exportImport);
+
+      // Right side: fields
+      const right = document.createElement("div");
+      right.className = "tuning-right";
+      const fieldsBox = document.createElement("div");
+      fieldsBox.id = "admin-tuning-fields";
+      right.appendChild(fieldsBox);
+
+      root.appendChild(left);
+      root.appendChild(right);
+
+      // Render initial content
+      renderTuningDrills(drillBox);
+      renderTuningLevels(document.getElementById("admin-tuning-level"));
+      renderTuningFields(fieldsBox);
+
+      // Bind events
+      document.getElementById("admin-tuning-level")?.addEventListener("change", (e) => {
+        tuningState.levelIndex = Number(e.target.value);
+        renderTuningFields(fieldsBox);
+      });
+      document.getElementById("admin-tuning-scope")?.addEventListener("change", (e) => {
+        tuningState.scope = e.target.value;
+        renderTuningFields(fieldsBox);
+      });
+      document.getElementById("admin-tuning-apply-all")?.addEventListener("click", () => {
+        const drill = tuningDrill();
+        const level = tuningLevel();
+        if (!drill || !level) return;
+        const data = loadOverrides();
+        const patch = data[drill.id]?.[String(level.index)];
+        if (!patch) { flash("Este nível ainda não tem valores customizados.", "bad"); return; }
+        saveOverride(drill.id, "all", mergeDeep(data[drill.id]?.all || {}, patch));
+        onApply();
+        renderTuningScreen();
+        flash("Valores aplicados em todos os níveis.");
+      });
+      document.getElementById("admin-tuning-reset-level")?.addEventListener("click", () => {
+        const drill = tuningDrill();
+        const level = tuningLevel();
+        if (!drill || !level) return;
+        saveOverride(drill.id, String(level.index), null);
+        onApply();
+        renderTuningScreen();
+        flash(`Nível ${level.index} restaurado.`);
+      });
+      document.getElementById("admin-tuning-reset-drill")?.addEventListener("click", () => {
+        const drill = tuningDrill();
+        if (!drill) return;
+        clearOverrides(drill.id);
+        onApply();
+        renderTuningScreen();
+        flash(`Treino "${drill.name}" restaurado.`);
+      });
+      document.getElementById("admin-tuning-reset-all")?.addEventListener("click", () => {
+        if (!confirm("Restaurar TODOS os valores customizados de todos os treinos?")) return;
+        clearOverrides(null);
+        onApply();
+        renderTuningScreen();
+        flash("Todos os valores foram restaurados.");
+      });
+      document.getElementById("admin-tuning-export")?.addEventListener("click", async () => {
+        const json = exportOverrides();
+        try {
+          await navigator.clipboard.writeText(json);
+          flash("JSON copiado para a área de transferência.");
+        } catch {
+          console.log(json);
+          flash("JSON impresso no console (clipboard bloqueado).");
+        }
+      });
+      document.getElementById("admin-tuning-import")?.addEventListener("click", () => document.getElementById("admin-tuning-import-file")?.click());
+      document.getElementById("admin-tuning-import-file")?.addEventListener("change", async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          importOverrides(text);
+          onApply();
+          renderTuningScreen();
+          flash("Overrides importados.");
+        } catch (err) {
+          flash(`Falha ao importar: ${err.message}`, "bad");
+        }
+        e.target.value = "";
+      });
+    }
+
+    // Initial render
+    renderTuningScreen();
+    return root;
+  }
+
   function render() {
     renderTabs();
     bodyEl.innerHTML = "";
@@ -1155,6 +1559,7 @@ export function createAdmin({ app, onApply }) {
     else if (view.tab === "arena") bodyEl.appendChild(arenaPanel());
     else if (view.tab === "modos") bodyEl.appendChild(modosPanel());
     else if (view.tab === "kitingVersus") bodyEl.appendChild(kitingVersusPanel());
+    else if (view.tab === "tuning") bodyEl.appendChild(tuningPanel());
     else bodyEl.appendChild(drillPanel());
   }
 

@@ -429,9 +429,9 @@ class SpacingKitingDrill {
     applyPlayerStats(this.player, playerStatsForDummy, params.playerHpScale ?? 1);
     this.world.add(this.player);
 
-    const dummyHits = this.levelNum >= 1 && this.levelNum <= 5 ? this.levelNum : 3;
+    const dummyHits = params.dummyHitsToKill ?? (this.levelNum >= 1 && this.levelNum <= 5 ? this.levelNum : 3);
     this.dummyHitsToKill = dummyHits;
-    this.dummyHp = Math.max(1, Math.round((this.player.attackDamage || 60) * dummyHits));
+    this.dummyHp = params.dummyHp ?? Math.max(1, Math.round((this.player.attackDamage || 60) * dummyHits));
 
     this.score = 0;
     this.lastPos = { x: this.player.x || 0, y: this.player.y || 0 };
@@ -443,7 +443,7 @@ class SpacingKitingDrill {
     this.dummies = [];
     this.dummyKills = 0;
 
-    this.dummyLifeTime = Math.max(2, 10 - (this.levelNum - 1));
+    this.dummyLifeTime = params.dummyLifeTime ?? Math.max(2, 10 - (this.levelNum - 1));
 
     this.world.onDamage = (unit, amount, source) => {
       if (!unit || !unit.isDummy || !unit.alive) return;
@@ -705,6 +705,294 @@ class SpacingKitingDrill {
   }
 }
 
+// SurvivalDrill (Supervivencia) - Lose 5% max HP every 15s (escalating, +5% per interval, capped 30%)
+// Dummies attack every 6s (telegraph ring green->red), kill = +120 HP / +100 points
+// Starts with 5x normal HP, no time limit until player dies
+// Pipeline espelhado do KitingDrill (input -> abilities -> controller -> tickTimers -> enemies)
+
+class SurvivalDrill {
+  constructor({ champion, level, params, rng, champions, onMoveMarker }) {
+    this.world = new World(ARENA);
+    this.rng = rng;
+    this.params = params || {};
+    const p = this.params;
+    this.ctx = { champion, champions: champions || [champion], level, rng: this.rng };
+    this.onMoveMarker = onMoveMarker;
+    this.duration = p.duration || 0;
+    this.timeLeft = 0; // usado como "tempo sobrevivido" (crescente) no HUD
+    this.finished = false;
+    this.outcome = "defeated";
+    this.ready = p.readyTime ?? 2.4;
+
+    // ---- valores editaveis (tela de balanceamento) ----
+    this.playerHpScale = p.playerHpScale ?? 5;
+    this.dummyCount = p.dummyCount ?? 3;
+    this.dummyHp = p.dummyHp ?? 120;
+    this.dummyAttackDamagePct = p.dummyAttackDamagePct ?? 0.2; // 20% da vida maxima do player
+    this.dummyAttackWait = p.dummyAttackWait ?? 6; // espera antes do 1o ataque
+    this.dummyAttackPeriod = p.dummyAttackPeriod ?? 1; // 1 ataque por segundo depois
+    this.dummyAttackRange = p.dummyAttackRange ?? 650;
+    this.dummyRewardHp = p.dummyRewardHp ?? 120;
+    this.dummyRewardScore = p.dummyRewardScore ?? 100;
+    this.telegraphFlashAt = p.telegraphFlashAt ?? 0.55;
+    this.drainInterval = p.drainInterval ?? 15;
+    this.drainFirst = p.drainFirst ?? 150; // primeiro tick
+    this.drainStep = p.drainStep ?? 150; // incremento por intervalo
+    this.drainCapPct = p.drainCapPct ?? 0.3; // teto de 30% da vida maxima
+
+    this.player = makePlayer(champion, ARENA.w * 0.5, ARENA.h / 2, 1);
+    applyPlayerStats(this.player, p.playerStats ? { ...p.playerStats } : undefined, this.playerHpScale);
+    this.world.add(this.player);
+    this.state = { attackTarget: null };
+
+    // metrics obrigatoria (evita "Cannot read properties of undefined (reading 'orders')")
+    this.metrics = {
+      attacksStarted: 0,
+      attacksLanded: 0,
+      attacksResolved: 0,
+      damageDealt: 0,
+      damageTaken: 0,
+      orders: 0,
+      casts: 0,
+      kills: 0,
+    };
+
+    this.score = 0;
+    this.dummyKills = 0;
+    // drenagem escalonada: primeiro tick 150, depois sobe 150 por intervalo (15s), cap 30% maxHp
+    this.nextDrainTime = this.drainInterval;
+    this.tickBase = Math.round(this.player.maxHp * 0.05); // 150 com 3000 maxHp
+    this.dummies = [];
+    this.respawns = [];
+
+    const self = this;
+    this.world.onDamage = function (unit, amount) {
+      if (!unit) return;
+      if (unit.team === "player") {
+        self.metrics.damageTaken += amount;
+      } else if (unit.team === "enemy") {
+        self.metrics.damageDealt += amount;
+      }
+    };
+
+    // dummies spawnam no fim do ready (fase update), não aqui
+  }
+
+  spawnDummy() {
+    const angle = this.rng.range(0, Math.PI * 2);
+    // posiciona dentro do alcance de ataque do dummy (evita que o player kite fora do range)
+    const distance = Math.min(this.player.attackRange * 0.9, 480);
+    const dummyHp = this.dummyHp;
+    const dummy = new Champion(
+      this.ctx.champion,
+      {
+        team: "enemy",
+        x: this.player.x + Math.cos(angle) * distance,
+        y: this.player.y + Math.sin(angle) * distance,
+        hp: dummyHp,
+      },
+    );
+    dummy.name = "SurvivalDummy";
+    dummy.behaviour = "stationary"; // dummy não anda, mas ataca a cada 6s
+    dummy.isDummy = true;
+    dummy.attackDamage = Math.round(this.player.maxHp * this.dummyAttackDamagePct); // 20% da vida máxima do player
+    dummy.attackRange = this.dummyAttackRange; // um pouco maior que o range do player
+    dummy.attackPeriod = this.dummyAttackPeriod; // 1 ataque por segundo depois da espera
+    dummy.attackTimer = this.dummyAttackWait; // espera antes do primeiro ataque
+    dummy.firstAttackDone = false;
+    dummy.isMelee = false;
+    dummy.projectileSpeed = 900;
+    dummy.maxHp = dummyHp;
+    dummy.hp = dummyHp;
+    this.world.add(dummy);
+    this.dummies.push(dummy);
+    this.world.effect("ring", dummy.x, dummy.y, {
+      color: "#46d39a", radius: 60, grow: 240, duration: 0.6,
+    });
+  }
+
+  update(dt, input) {
+    input.dt = dt;
+    const world = this.world;
+    const player = this.player;
+
+    if (this.ready > 0) {
+      this.ready = Math.max(0, this.ready - dt);
+      world.update(dt);
+      if (this.ready <= 0) {
+        for (let i = 0; i < this.dummyCount; i++) this.spawnDummy();
+      }
+      return;
+    }
+
+    // drenagem escalonada: primeiro tick drainFirst, sobe drainStep por intervalo, cap drainCapPct
+    this.timeLeft = Math.floor(world.time); // HUD: tempo sobrevivido
+    if (world.time >= this.nextDrainTime) {
+      const tier = Math.max(1, Math.round(this.nextDrainTime / this.drainInterval));
+      this.nextDrainTime += this.drainInterval;
+      const amount = Math.min(
+        Math.round(player.maxHp * this.drainCapPct),
+        this.drainFirst + (tier - 1) * this.drainStep,
+      );
+      player.hp = Math.max(0, player.hp - amount);
+      this.score = Math.max(0, this.score);
+      this.world.effect("text", player.x, player.y - player.radius, {
+        text: `-${amount}`, color: "#ff5f6d", duration: 1.0,
+      });
+      if (player.hp <= 0) {
+        this.finished = true;
+        this.outcome = "defeated";
+      }
+    }
+
+    // 1) input (defensive, como SpacingKitingDrill)
+    let orders = null;
+    try { orders = applyInput(player, input, world, this.onMoveMarker); } catch {}
+    if (orders && orders.ordered) this.metrics.orders += 1;
+
+    // 2) habilidades QWER
+    for (const slot of ["Q", "W", "E", "R"]) {
+      if (input.hit(`Key${slot}`)) {
+        try { castAbility(player, slot, input.mouse.x, input.mouse.y, world); this.metrics.casts += 1; } catch {}
+      }
+    }
+    tickAbilities(player, dt);
+
+    // 3) controller: EXECUTA movimentação/ataques (falta era isso!)
+    const action = player.controller.update(dt, world);
+    if (action && action.attacked) this.metrics.attacksStarted += 1;
+    if (input.attackMoveActive && action && action.attacked && player.controller.order.kind === "attackMove") {
+      input.deactivateAttackMove();
+    }
+
+    // 4) resolve o ataque do player (gera dano nos dummies)
+    const resolved = player.tickTimers(dt);
+    if (resolved) {
+      this.metrics.attacksResolved += 1;
+      resolveAttack(player, world, resolved, (target) => {
+        if (target && target.alive) this.metrics.attacksLanded += 1;
+      });
+    }
+
+    // 5) morte de dummy: recupera HP e pontua (valores editaveis)
+    const deadDummies = this.dummies.filter((d) => d && !d.alive);
+    for (const d of deadDummies) {
+      this.dummyKills += 1;
+      this.score += this.dummyRewardScore;
+      player.hp = Math.min(player.maxHp, player.hp + this.dummyRewardHp);
+      this.world.effect("text", player.x, player.y - player.radius, {
+        text: `+${this.dummyRewardHp}`, color: "#46d39a", duration: 0.9,
+      });
+      this.world.effect("ring", d.x, d.y, {
+        color: "#46d39a", radius: 60, grow: 320, duration: 0.6,
+      });
+      try { world.remove(d); } catch {}
+      const idx = this.dummies.indexOf(d);
+      if (idx >= 0) this.dummies.splice(idx, 1);
+    }
+
+    // 6) dummies atacam: dummyAttackWait de espera, depois dummyAttackPeriod entre ataques
+    for (const dummy of this.dummies) {
+      if (!dummy.alive) continue;
+      updateEnemy(dummy, world, player, dt, { speedScale: 1 });
+      const dummyResolved = dummy.tickTimers(dt);
+      if (dummyResolved) {
+        resolveAttack(dummy, world, dummyResolved, null);
+        if (!dummy.firstAttackDone) {
+          // após o primeiro ataque, passa a atacar no período configurado
+          dummy.firstAttackDone = true;
+          dummy.attackPeriod = this.dummyAttackPeriod;
+          dummy.attackTimer = this.dummyAttackPeriod;
+        }
+      }
+    }
+
+    // 7) telegráfico: progresso 0 (verde) -> 1 (vermelho) até o próximo ataque
+    for (const dummy of this.dummies) {
+      if (!dummy.alive) continue;
+      const period = Math.max(0.1, dummy.attackPeriod);
+      dummy.telegraphProgress = 1 - clamp(dummy.attackTimer, 0, period) / period;
+      dummy.telegraphFlashAt = this.telegraphFlashAt;
+    }
+
+    // manter a quantidade de dummies vivos
+    if (this.dummies.length < this.dummyCount && !this.finished) this.spawnDummy();
+
+    world.update(dt);
+    world.separate();
+    world.clampUnits();
+
+    if (!player.alive && !this.finished) {
+      this.finished = true;
+      this.outcome = "defeated";
+    }
+  }
+
+  render(scene, opts) {
+    scene.render(this.world, {
+      player: this.player,
+      showRanges: opts.showRanges !== false,
+      attackMoveActive: opts.attackMoveActive,
+      focusTarget: this.focusTarget(),
+      dt: opts.dt,
+      input: opts.input, // essencial: consome o zoom via roda do mouse
+    });
+  }
+
+  focusTarget() {
+    const ordered = this.player.controller.target;
+    if (ordered && ordered.alive) return ordered;
+    return this.dummies.find((d) => d && d.alive) || null;
+  }
+
+  coach() {
+    const player = this.player;
+    const target = this.focusTarget();
+    if (!target) return "Clique com o botão direito no dummy para atacar";
+    if (player.controller.order.kind === "attack") {
+      const d = Math.hypot(target.x - player.x, target.y - player.y);
+      if (d > player.attackRange * 0.96) return "Aproxime-se do dummy para atacar";
+      return "Atacando — o dummy morto recupera 120 HP";
+    }
+    return "Clique com o botão direito no dummy para atacar (cada kill dá +120 HP)";
+  }
+
+  hud() {
+    const aliveDummies = this.dummies.filter((d) => d && d.alive).length;
+    const time = Math.floor(this.world.time || 0);
+    return [
+      { label: "Vivos", value: `${Math.max(0, Math.round(this.player.hp))}` },
+      { label: "Dummies", value: `${aliveDummies}` },
+      { label: "Kills", value: this.dummyKills },
+      { label: "Tempo", value: `${time}s` },
+      { label: "Score", value: Math.max(0, Math.round(this.score)), tone: this.score > 0 ? "good" : "bad" },
+    ];
+  }
+
+  result() {
+    const survivalTime = this.world.time || 0;
+    const score = Math.max(0, Math.round(this.score));
+    const minutes = Math.floor(survivalTime / 60);
+    const seconds = Math.floor(survivalTime % 60);
+    const verdict = score >= 600 ? "Excelente! Sobreviveu por muito tempo."
+      : score >= 300 ? "Bom. Sobreviveu por bastante tempo."
+      : "Você foi derrotado rapidamente.";
+    return {
+      score,
+      breakdown: [
+        { name: "Tempo de sobrevivência", detail: "Tempo até a derrota", value: Math.min(1, survivalTime / 180), display: `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`, color: "#4ea1ff" },
+        { name: "Dummies eliminados", detail: "Cada kill vale 100 pontos", value: Math.min(1, this.dummyKills / 6), display: String(this.dummyKills), color: "#46d39a" },
+      ],
+      verdict,
+      stats: {
+        score,
+        dummyKills: this.dummyKills,
+        survivalTime: Math.round(survivalTime),
+      },
+    };
+  }
+}
+
 class PeelKitingDrill extends KitingDrill {
   constructor(opts) {
     super(opts);
@@ -886,6 +1174,19 @@ export function buildKitingDrills(champions, snapshot = null) {
   const spacingLevels = realSpacing.length ? realSpacing : fallbackSpacingLevels;
   const defensiveLevels = realDefensive.length ? realDefensive : fallbackDefensiveLevels;
   const peelLevels = realPeel.length ? realPeel : fallbackPeelLevels;
+
+  // injeta os defaults editaveis (tela de balanceamento) em cada nivel
+  const withDefaults = (list, defaults) => list.map((item, i) => {
+    const lv = item?.params ? item : { index: i + 1, params: item || {} };
+    const index = lv.index ?? i + 1;
+    const params = { ...defaults(index), ...(lv.params || {}) };
+    return { ...lv, index, params };
+  });
+
+  const spacingWithDefaults = withDefaults(spacingLevels, (index) => ({
+    dummyHitsToKill: index >= 1 && index <= 5 ? index : 3,
+    dummyLifeTime: Math.max(2, 10 - (index - 1)),
+  }));
   const asLevels = (list) => list.map((item, i) => (item?.params ? item : { index: i + 1, params: item }));
 
   return [
@@ -898,7 +1199,7 @@ export function buildKitingDrills(champions, snapshot = null) {
       description:
         "Destrua dummies que aparecem ao redor de você. Cada nível exige eliminar uma quantidade específica de dummies para avançar. Os dummies somem com o tempo, então seja rápido!",
       unlockScore: 70,
-      levels: asLevels(spacingLevels),
+      levels: asLevels(spacingWithDefaults),
       create: (ctx) => new SpacingKitingDrill({ ...ctx, params: ctx.level.params }),
     },
     {
@@ -924,6 +1225,38 @@ export function buildKitingDrills(champions, snapshot = null) {
       unlockScore: 75,
       levels: asLevels(peelLevels),
       create: (ctx) => new PeelKitingDrill({ ...ctx, params: ctx.level.params }),
+    },
+    {
+      id: "kiting-survival",
+      name: "Supervivencia",
+      category: "kiting",
+      tagline: "Sobreviva o maior tempo possível",
+      hint: "Dummies atacam a cada 6s (anel verde -> vermelho avisa). Perca 5% da vida a cada 15s (aumenta até 30%). Mate dummies para recuperar 120 HP.",
+      description:
+        "Sobrevivencia pura: dummies atacam você a cada 6 segundos — o anel ao redor deles vai do verde ao vermelho conforme o ataque se aproxima. Você perde 5% da vida máxima a cada 15s (o dano aumenta 5% por intervalo, até 30%), e mata dummies para recuperar 120 de vida. Quantos dummies voce consegue eliminar antes de morrer?",
+      unlockScore: 80,
+      levels: [{
+        index: 1,
+        params: {
+          duration: 0,
+          readyTime: 2.4,
+          playerHpScale: 5,
+          dummyCount: 3,
+          dummyHp: 120,
+          dummyAttackDamagePct: 0.2,
+          dummyAttackRange: 650,
+          dummyAttackWait: 6,
+          dummyAttackPeriod: 1,
+          telegraphFlashAt: 0.55,
+          drainInterval: 15,
+          drainFirst: 150,
+          drainStep: 150,
+          drainCapPct: 0.3,
+          dummyRewardHp: 120,
+          dummyRewardScore: 100,
+        },
+      }],
+      create: (ctx) => new SurvivalDrill({ ...ctx, params: ctx.level.params }),
     },
   ];
 }

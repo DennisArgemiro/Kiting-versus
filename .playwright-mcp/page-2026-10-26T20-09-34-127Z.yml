@@ -1,0 +1,58 @@
+- generic [ref=f2e155]:
+  - generic [ref=f2e156]:
+    - generic [ref=f2e157]:
+      - button "← Sair" [ref=f2e158] [cursor=pointer]
+      - generic [ref=f2e159]:
+        - strong [ref=f2e160]: Supervivencia
+        - generic [ref=f2e161]: Nível 1
+    - generic [ref=f2e162]:
+      - generic [ref=f2e163]: 0:00
+      - generic [ref=f2e164]:
+        - text: Pontos
+        - strong [ref=f2e165]: —
+    - generic "Sua vida" [ref=f2e167]: "3000"
+  - generic:
+    - generic: Q
+    - generic: W
+    - generic: E
+    - generic: R
+  - generic:
+    - 'generic "Vida: 600 (+0%)"':
+      - generic: ❤️
+      - generic: 600 (+0%)
+      - generic: (+0%)
+    - 'generic "Dano: 60 (+0%)"':
+      - generic: ⚔️
+      - generic: 60 (+0%)
+      - generic: (+0%)
+    - 'generic "Alcance: 550 (+0%)"':
+      - generic: 🎯
+      - generic: 550 (+0%)
+      - generic: (+0%)
+    - 'generic "AA/s: 2.50 (+0%)"':
+      - generic: 🏹
+      - generic: 2.50 (+0%)
+      - generic: (+0%)
+    - 'generic "Windup: 300ms (NaN%)"':
+      - generic: ⏱️
+      - generic: 300ms (NaN%)
+      - generic: (NaN%)
+    - 'generic "Vel. Mov: 325 (+0%)"':
+      - generic: 👟
+      - generic: 325 (+0%)
+      - generic: (+0%)
+    - 'generic "Vel. Proj: 2000 (+0%)"':
+      - generic: 🚀
+      - generic: 2000 (+0%)
+      - generic: (+0%)
+    - 'generic "Armadura: 24 (+0%)"':
+      - generic: 🛡️
+      - generic: 24 (+0%)
+      - generic: (+0%)
+    - 'generic "Res. Mág: 30 (+0%)"':
+      - generic: 🔮
+      - generic: 30 (+0%)
+      - generic: (+0%)
+  - generic [ref=f2e171]:
+    - generic: "2"
+    - generic: Dummies te perseguem. Perca 40 HP a cada 0.5s. Mate dummies para recuperar 120 HP. Sem tempo limite - jogo acaba quando voce morrer.

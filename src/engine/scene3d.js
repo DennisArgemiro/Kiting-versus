@@ -215,7 +215,7 @@ export class Scene3D {
   }
 
   worldToScreen(x, y) {
-    const v = new THREE.Vector3(x, 0, y);project(this.camera);
+    const v = new THREE.Vector3(x, 0, y).project(this.camera);
     const rect = this.renderer.domElement.getBoundingClientRect();
     return {
       x: rect.left + (v.x * 0.5 + 0.5) * rect.width,
@@ -425,10 +425,36 @@ export class Scene3D {
       opts.input.consumedAttackMove = false;
     }
 
+    // Telegraph rings: units exposing telegraphProgress in [0,1] draw a persistent
+    // ring that lerps green -> amber -> red as their next attack approaches.
+    for (const unit of world.living("enemy")) {
+      if (typeof unit.telegraphProgress !== "number") continue;
+      const p = Math.max(0, Math.min(1, unit.telegraphProgress));
+      const c = new THREE.Color(0x46d39a);
+      if (p < 0.35) c.lerp(new THREE.Color(0xffd166), p / 0.35);
+      else c.lerp(new THREE.Color(0xff5f6d), Math.min(1, (p - 0.35) / 0.45));
+      // flash bright red earlier (from unit.telegraphFlashAt, default 55% progress)
+      let opacity = 0.35;
+      const flashAt = typeof unit.telegraphFlashAt === "number" ? unit.telegraphFlashAt : 0.55;
+      if (p >= flashAt && Math.floor((this.worldTime || 0) * 8) % 2 === 0) {
+        c.set(0xff2d43);
+        opacity = 0.75;
+      }
+      const ring = this.ensureRing(`telegraph-${unit.id}`, c.getHex(), opacity);
+      ring.visible = true;
+      ring.scale.setScalar((unit.radius || 40) + 18 + p * 14);
+      ring.position.set(unit.x, 3, unit.y);
+    }
+
     if (!showRanges) return;
 
     for (const enemy of world.living("enemy")) {
       if (!enemy.attackRange) continue;
+      if (typeof enemy.telegraphProgress === "number") {
+        // dummy de telegráfico: sem anel de range duplicado
+        this.ensureRing(`enemy-${enemy.id}`, 0x000000, 0).visible = false;
+        continue;
+      }
       const safe = player.attackRange > enemy.attackRange + 40;
       const ring = this.ensureRing(`enemy-${enemy.id}`, safe ? 0x46d39a : 0xff5f6d, 0.16);
       ring.visible = true;
@@ -637,7 +663,7 @@ export class Scene3D {
         ictx.textBaseline = "middle";
         ictx.fillStyle = "#fff";
         ictx.shadowColor = "#000";
-        ictx.shadowBlur = 8.
+        ictx.shadowBlur = 8;
         ictx.fillText(pu.icon, 64, 72);
         const iconTexture = new THREE.CanvasTexture(iconCanvas);
         iconTexture.colorSpace = THREE.SRGBColorSpace;
@@ -652,15 +678,15 @@ export class Scene3D {
         this.powerupViews.set(key, view);
       }
 
-      const time = this.worldTime || 0.
+      const time = this.worldTime || 0;
       if (view.ring) {
         view.ring.position.set(pu.x || 0, 8 + Math.sin(time * 3) * 3, pu.y || 0);
-        view.ring.rotation.z += 0.02.
+        view.ring.rotation.z += 0.02;
         view.ring.scale.setScalar(1 + Math.sin(time * 4) * 0.1);
       }
       if (view.inner) {
         view.inner.position.set(pu.x || 0, 9 + Math.sin(time * 3 + 0.5) * 2, pu.y || 0);
-        view.inner.rotation.z -= 0.03.
+        view.inner.rotation.z -= 0.03;
         view.inner.scale.setScalar(1 + Math.cos(time * 4) * 0.15);
       }
       if (view.iconSprite) view.iconSprite.position.set(pu.x || 0, 55 + Math.sin(time * 2) * 5, pu.y || 0);
@@ -738,7 +764,7 @@ export class Scene3D {
       new THREE.RingGeometry(20, 30, 32),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
     );
-    mesh.rotation.x = -Math.PI / 2.
+    mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(x, 6, y);
     this.scene.add(mesh);
     this.markers.push({ mesh, life: 0, maxLife: 0.45 });
@@ -752,8 +778,8 @@ export class Scene3D {
           color: 0x46d39a, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false,
         }),
       );
-      this.focus.rotation.x = -Math.PI / 2.
-      this.focus.position.y = 5.
+      this.focus.rotation.x = -Math.PI / 2;
+      this.focus.position.y = 5;
       this.scene.add(this.focus);
     }
     this.focus.visible = Boolean(unit);
@@ -781,7 +807,7 @@ export class Scene3D {
       this.cameraFocus.lerp(this.focusTarget, k);
     }
 
-    const zoom = this.zoom || 1.
+    const zoom = this.zoom || 1;
     const distance = this.cameraDistance / zoom;
 
     const pitchRad = THREE.MathUtils.degToRad(this.cameraPitch);
@@ -796,9 +822,9 @@ export class Scene3D {
   }
 
   setCameraConfig({ zoom = 1, fov = 42, distance = 850, pitch = 30 } = {}) {
-    this.zoom = zoom > 0 ? zoom : 1.
-    this.cameraDistance = distance > 0 ? distance : 850.
-    this.cameraPitch = pitch > 0 ? pitch : 30.
+    this.zoom = zoom > 0 ? zoom : 1;
+    this.cameraDistance = distance > 0 ? distance : 850;
+    this.cameraPitch = pitch > 0 ? pitch : 30;
     if (this.camera.fov !== fov) {
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();

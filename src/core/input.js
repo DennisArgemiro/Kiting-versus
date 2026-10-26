@@ -101,7 +101,7 @@ export class Input {
     this.mouse.x = 0;
     this.mouse.y = 0;
     this._lastClient = null;
-    this._zoomDelta = 0;
+    // Não resetar _zoomDelta para preservar zoom entre modos
   }
 
   /** True while the key is held. */

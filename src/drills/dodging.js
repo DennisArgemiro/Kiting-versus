@@ -521,6 +521,8 @@ export function buildDodgeDrills(champions, snapshot = null) {
       levels: realSkillLevels.length ? realSkillLevels : levels,
       create: (ctx) => new DodgeDrill({ ...ctx, params: ctx.level.params }),
     },
+    /* 
+    Desabilitado temporariamente
     {
       id: "dodge-punish",
       name: "Esquiva e Contragolpe",
@@ -533,5 +535,6 @@ export function buildDodgeDrills(champions, snapshot = null) {
       levels: punishLevels,
       create: (ctx) => new DodgeDrill({ ...ctx, params: ctx.level.params }),
     },
+    */
   ];
 }
