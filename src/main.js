@@ -365,7 +365,7 @@ function startOnlineMatch() {
       try {
         arena.update(dt, input1, null);
       } catch (e) {
-        console.error('arena update error', e);
+        console.error('arena update error', e, e.stack);
       }
 
       if (arena.finished && app.arenaSession && !app.arenaSession.ending) {
@@ -395,7 +395,7 @@ function startOnlineMatch() {
         $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
         input1.endFrame();
       } catch (e) {
-        console.error('arena render error', e);
+        console.error('arena render error', e, e.stack);
       }
     }
   );
@@ -667,7 +667,7 @@ function startDrill(drill, level) {
 
   const loop = new Loop(
     (dt) => {
-      run.update(dt, input);
+      try { run.update(dt, input); } catch (e) { console.error("drill update error", e, e.stack); }
       if (run.finished && app.session && !app.session.ending) {
         app.session.ending = true;
         finishDrill();
@@ -679,7 +679,7 @@ function startDrill(drill, level) {
       lastFrame = now;
       const combat = config.combat();
       const edgeScroll = combat.cameraLocked ? null : input.getEdgeScroll();
-      run.render(scene, { showRanges: combat.showRanges, dt: lastDelta, attackMoveActive: input.attackMoveActive, input });
+      try { run.render(scene, { showRanges: combat.showRanges, dt: lastDelta, attackMoveActive: input.attackMoveActive, input }); } catch (e) { console.error("drill render error", e, e.stack); }
       scene.updateCamera(run.player, lastDelta, edgeScroll);
       updateHud(run);
       $("#game-stage").classList.toggle("is-attackmove", input.attackMoveActive);
@@ -1176,7 +1176,7 @@ function startArena(opts) {
       try {
         arena.update(dt, input1, null);
       } catch (e) {
-        console.error('arena update error', e);
+        console.error('arena update error', e, e.stack);
       }
       
       if (arena.finished && app.arenaSession && !app.arenaSession.ending) {
@@ -1214,7 +1214,7 @@ function startArena(opts) {
         $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
         input1.endFrame();
       } catch (e) {
-        console.error('arena render error', e);
+        console.error('arena render error', e, e.stack);
       }
     }
   );

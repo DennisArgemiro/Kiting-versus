@@ -226,7 +226,7 @@ export class ArenaMode {
         const p1Resolved = this.player1.tickTimers(dt);
         if (p1Resolved) resolveAttack(this.player1, this.world, p1Resolved, null);
       } catch (e) {
-        console.error('p1 update error', e);
+        console.error('p1 update error', e, e.stack);
       }
     } else if (this.player1 && this.player1.controller) {
       try {
@@ -248,7 +248,7 @@ export class ArenaMode {
         const p2Resolved = this.player2.tickTimers(dt);
         if (p2Resolved) resolveAttack(this.player2, this.world, p2Resolved, null);
       } catch (e) {
-        console.error('p2 update error', e);
+        console.error('p2 update error', e, e.stack);
       }
     } else if (this.player2 && this.player2.controller) {
       try {
@@ -274,7 +274,7 @@ export class ArenaMode {
       this.world.separate();
       this.world.clampUnits();
     } catch (e) {
-      console.error('world update error', e);
+      console.error('world update error', e, e.stack);
     }
   }
   
@@ -497,7 +497,7 @@ export class ArenaMode {
         powerups: this.powerups
       });
     } catch (e) {
-      console.error('arena render error', e);
+      console.error('arena render error', e, e.stack);
     }
   }
   

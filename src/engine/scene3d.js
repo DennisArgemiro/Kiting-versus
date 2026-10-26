@@ -730,7 +730,7 @@ export class Scene3D {
       }
     }
 
-    this.renderer.render(this.scene, this.camera);
+    try { this.renderer.render(this.scene, this.camera); } catch (e) { console.error("WebGL render error", e, e.stack); }
   }
 
   showMoveMarker(x, y, color = 0x4ea1ff) {
