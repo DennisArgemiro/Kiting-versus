@@ -17,13 +17,8 @@ const KEY = "skillgap-web.config.v1";
 
 export const DEFAULTS = {
   version: 1,
-  // The lane segment used by every drill, in League of Legends game units.
-  // 3200 x 1900 is roughly twice the old 2400 x 1400 - enough room to kite
-  // without walking off the map.
   arena: { w: 3200, h: 1900 },
-  // Camera framing. `zoom` multiplies the distance. Height is derived from distance * tan(pitch).
   camera: { zoom: 1, fov: 42, distance: 850 },
-  // Global multipliers applied on top of the per-level tuning.
   combat: {
     enemyRangeScale: 1,
     enemySpeedScale: 1,
@@ -35,12 +30,11 @@ export const DEFAULTS = {
     showRanges: true,
     cameraLocked: true,
     attackMoveTargetNearest: true,
-    cameraPitch: 55, // degrees from horizontal down to focus point; lower = flatter LoL-style
+    cameraPitch: 55,
   },
-  // Arena-specific settings
   arenaSettings: {
     maxScore: 5,
-    duration: 180, // seconds
+    duration: 180,
     powerupsEnabled: true,
     powerupSpawnInterval: { min: 12, max: 20 },
     maxPowerups: 3,
@@ -53,17 +47,11 @@ export const DEFAULTS = {
       movSpeedNerf: { enabled: true, multiplier: 0.7, duration: 5 },
     },
   },
-  // alias -> partial champion stats
   champions: {},
-  // drillId -> partial params (duration, enemyCount, speedScale, ...)
   drills: {},
-  // key -> level -> full/partial Firestore level override.  A saved object is
-  // merged over the recovered snapshot at drill-construction time, so the
-  // admin can edit any recovered numeric field without re-running REA.
   skillgap: {},
 };
 
-/** Stats the admin screen may override, in the order it shows them. */
 export const CHAMPION_FIELDS = [
   "health",
   "attackDamage",
@@ -103,9 +91,7 @@ function read() {
 function persist(state) {
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
-  } catch {
-    /* storage disabled: settings apply for this session only */
-  }
+  } catch {}
 }
 
 let state = read();
@@ -116,14 +102,12 @@ export const config = {
     return state;
   },
 
-  /** Re-read from localStorage (used by the automated driver). */
   reload() {
     state = read();
     persist(state);
     return state;
   },
 
-  /** Merge a patch over the whole config tree. */
   set(patch) {
     state = deepMerge(structuredClone(DEFAULTS), deepMerge(state, patch));
     persist(state);
@@ -131,7 +115,6 @@ export const config = {
     return state;
   },
 
-  /** Merge values into one top-level section (arena, camera, combat, ...). */
   patch(section, values) {
     state[section] = deepMerge(state[section] ?? {}, values);
     persist(state);
@@ -139,7 +122,6 @@ export const config = {
     return state;
   },
 
-  /** Store a per-champion override. `null` removes it. */
   setChampion(alias, values) {
     if (values === null) delete state.champions[alias];
     else state.champions[alias] = { ...(state.champions[alias] || {}), ...values };
@@ -153,7 +135,6 @@ export const config = {
     emit();
   },
 
-  /** Remove a single champion override (the "reset field" button). */
   clearChampionField(alias, field) {
     const entry = state.champions?.[alias];
     if (!entry) return;
@@ -163,7 +144,6 @@ export const config = {
     emit();
   },
 
-  /** Store a per-drill override. `null` removes it. */
   setDrill(drillId, values) {
     if (values === null) delete state.drills[drillId];
     else state.drills[drillId] = { ...(state.drills[drillId] || {}), ...values };
@@ -177,7 +157,6 @@ export const config = {
     emit();
   },
 
-  /** Remove a single drill override (the "reset field" button). */
   clearDrillField(drillId, field) {
     const entry = state.drills?.[drillId];
     if (!entry) return;
@@ -187,12 +166,10 @@ export const config = {
     emit();
   },
 
-  /** A saved override for one real Skill Gap level, or null. */
   skillgapLevel(key, level) {
     return state.skillgap?.[key]?.[String(level)] || null;
   },
 
-  /** Replace the override for a level.  `null` restores the snapshot. */
   setSkillgapLevel(key, level, values) {
     state.skillgap = state.skillgap || {};
     if (values === null) {
@@ -241,7 +218,6 @@ export const config = {
     };
   },
 
-  // ── typed getters ────────────────────────────────────────────────
   arena() {
     return {
       x: 0,
@@ -295,38 +271,26 @@ function emit() {
   }
 }
 
-// ─────────────────────────── application helpers ───────────────────────────
-
-/**
- * Writes the champion overrides into a mutable champion list and returns it.
- * Call it on a fresh clone of the base data, never on the pristine source.
- */
 export function applyChampionOverrides(champions) {
   for (const champion of champions) {
     const override = state.champions?.[champion.alias];
     if (!override || !champion.stats) continue;
     const stats = champion.stats;
     for (const field of CHAMPION_FIELDS) {
-      if (field === "attackSpeed") continue; // derived below, keeps period in sync
+      if (field === "attackSpeed") continue;
       const value = override[field];
       if (typeof value === "number" && Number.isFinite(value)) stats[field] = value;
     }
     if (typeof override.attackSpeed === "number" && override.attackSpeed > 0) {
-      stats.attackSpeed = override.attackSpeed;
-      stats.attackPeriod = 1 / override.attackSpeed;
+      const baseAaPerSec = 1 / stats.attackPeriod;
+      stats.attackSpeed = baseAaPerSec * override.attackSpeed;
+      stats.attackPeriod = 1 / stats.attackSpeed;
     }
     if (typeof override.isMelee === "boolean") stats.isMelee = override.isMelee;
   }
   return champions;
 }
 
-/**
- * Merges the per-drill overrides into a level's params.
- *
- * `enemyCount` grows or shrinks the roster without editing every level:
- * extra enemies are clones of the existing specs with a bumped seed, which
- * is exactly how the hand-written level tables add a second partner.
- */
 export function applyDrillOverrides(drillId, params) {
   const override = state.drills?.[drillId];
   if (!override) return params;
