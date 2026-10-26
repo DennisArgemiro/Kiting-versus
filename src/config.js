@@ -50,6 +50,16 @@ export const DEFAULTS = {
   champions: {},
   drills: {},
   skillgap: {},
+  // Drill mode toggles (admin panel).  All true by default.
+  modosDrills: {
+    "kiting-spacing": true,
+    "kiting-defensive": true,
+    "kiting-peel": true,
+    "dodge-skillshot": true,
+    "dodge-shoot-dodge": true,
+    "sg-kiting-microgame": true,
+    "sg-kiting-dodge": true,
+  },
 };
 
 export const CHAMPION_FIELDS = [
