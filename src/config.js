@@ -13,7 +13,7 @@
  *   - the module never imports game modules, so there are no cycles.
  */
 
-const KEY = "skillgap-web.config.v1";
+const KEY = "kitingVersus-web.config.v1";
 
 export const DEFAULTS = {
   version: 1,
@@ -49,7 +49,7 @@ export const DEFAULTS = {
   },
   champions: {},
   drills: {},
-  skillgap: {},
+  kitingVersus: {},
   // Drill mode toggles (admin panel). Only kiting-spacing and kiting-defensive enabled.
   modosDrills: {
     "kiting-spacing": true,
@@ -176,27 +176,27 @@ export const config = {
     emit();
   },
 
-  skillgapLevel(key, level) {
-    return state.skillgap?.[key]?.[String(level)] || null;
+  kitingVersusLevel(key, level) {
+    return state.kitingVersus?.[key]?.[String(level)] || null;
   },
 
-  setSkillgapLevel(key, level, values) {
-    state.skillgap = state.skillgap || {};
+  setKitingVersusLevel(key, level, values) {
+    state.kitingVersus = state.kitingVersus || {};
     if (values === null) {
-      if (state.skillgap[key]) {
-        delete state.skillgap[key][String(level)];
-        if (!Object.keys(state.skillgap[key]).length) delete state.skillgap[key];
+      if (state.kitingVersus[key]) {
+        delete state.kitingVersus[key][String(level)];
+        if (!Object.keys(state.kitingVersus[key]).length) delete state.kitingVersus[key];
       }
     } else {
-      state.skillgap[key] = state.skillgap[key] || {};
-      state.skillgap[key][String(level)] = values;
+      state.kitingVersus[key] = state.kitingVersus[key] || {};
+      state.kitingVersus[key][String(level)] = values;
     }
     persist(state);
     emit();
   },
 
-  clearSkillgap(key) {
-    if (state.skillgap) delete state.skillgap[key];
+  clearKitingVersus(key) {
+    if (state.kitingVersus) delete state.kitingVersus[key];
     persist(state);
     emit();
   },

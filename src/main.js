@@ -18,7 +18,7 @@ let lastDelta = 0.016;
 const app = {
   champions: [],
   rawChampions: [],
-  skillgap: null,
+  kitingVersus: null,
   drills: [],
   byId: new Map(),
   filter: "all",
@@ -37,8 +37,8 @@ const app = {
 };
 
 const SOCKET_URL = 'http://localhost:3002';
-const ADMIN_AUTH_KEY = 'skillgap-web.admin-auth';
-const ADMIN_SESSION_KEY = 'skillgap-web.admin-session';
+const ADMIN_AUTH_KEY = 'kitingVersus-web.admin-auth';
+const ADMIN_SESSION_KEY = 'kitingVersus-web.admin-session';
 const DEFAULT_ADMIN_PASSWORD_HASH = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9';
 const ADMIN_PASSWORD_HASH_ENV = (typeof ADMIN_PASSWORD_HASH !== 'undefined') ? ADMIN_PASSWORD_HASH : null;
 
@@ -52,7 +52,7 @@ async function hashPassword(password) {
 
 function getStoredPasswordHash() {
   try {
-    const stored = localStorage.getItem('skillgap-web.admin-password');
+    const stored = localStorage.getItem('kitingVersus-web.admin-password');
     return stored || ADMIN_PASSWORD_HASH_ENV || DEFAULT_ADMIN_PASSWORD_HASH;
   } catch {
     return ADMIN_PASSWORD_HASH_ENV || DEFAULT_ADMIN_PASSWORD_HASH;
@@ -61,7 +61,7 @@ function getStoredPasswordHash() {
 
 function setStoredPasswordHash(hash) {
   try {
-    localStorage.setItem('skillgap-web.admin-password', hash);
+    localStorage.setItem('kitingVersus-web.admin-password', hash);
   } catch {}
 }
 
@@ -444,8 +444,8 @@ async function boot() {
   app.champions = applyChampionOverrides(structuredClone(app.rawChampions));
 
   try {
-    const sgResponse = await fetch("./src/data/skillgap-levels.json");
-    if (sgResponse.ok) app.skillgap = await sgResponse.json();
+    const sgResponse = await fetch("./src/data/kitingVersus-levels.json");
+    if (sgResponse.ok) app.kitingVersus = await sgResponse.json();
   } catch (err) {
     console.warn("Snapshot do Skill Gap indisponível; usando níveis locais.", err);
   }
@@ -465,7 +465,7 @@ async function boot() {
 }
 
 function rebuildDrills() {
-  app.drills = buildDrills(app.champions, app.skillgap, config.state.modosDrills);
+  app.drills = buildDrills(app.champions, app.kitingVersus, config.state.modosDrills);
   app.byId = new Map(app.drills.map((d) => [d.id, d]));
 }
 

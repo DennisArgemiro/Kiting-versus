@@ -9,7 +9,7 @@ import { clamp } from "../core/math.js";
 import {
   applyPlayerStats, durationOf, levelsOf, realLevel, selectedChampions as pickSelectedChampions,
   syntheticStats, withRealStats,
-} from "./skillgap.js";
+} from "./kitingVersus.js";
 
 const CASTER_POOL = ["Ahri", "Lux", "Morgana", "Brand", "Thresh", "Blitzcrank", "Zed", "Velkoz", "Ekko"];
 

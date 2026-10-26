@@ -15,7 +15,7 @@ const TABS = [
   { id: "arena", label: "Arena" },
   { id: "drills", label: "Treinos" },
   { id: "modos", label: "Modos" },
-  { id: "skillgap", label: "Dados REA" },
+  { id: "kitingVersus", label: "Dados REA" },
 ];
 
 const number = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -26,13 +26,13 @@ export function createAdmin({ app, onApply }) {
   const bodyEl = document.querySelector("#admin-body");
   const statusEl = document.querySelector("#admin-status");
 
-  const trainingKeys = Object.keys(app.skillgap?.trainings || {});
+  const trainingKeys = Object.keys(app.kitingVersus?.trainings || {});
   const view = {
     tab: "map",
     champion: app.champions[0]?.alias ?? "",
     drill: app.drills[0]?.id ?? "",
-    skillgapKey: trainingKeys.includes("KITING_0") ? "KITING_0" : (trainingKeys[0] || ""),
-    skillgapLevel: 1,
+    kitingVersusKey: trainingKeys.includes("KITING_0") ? "KITING_0" : (trainingKeys[0] || ""),
+    kitingVersusLevel: 1,
   };
 
   let statusTimer = 0;
@@ -861,29 +861,29 @@ export function createAdmin({ app, onApply }) {
       .replace(/^./, (c) => c.toUpperCase());
   }
 
-  function skillgapPanel() {
+  function kitingVersusPanel() {
     const root = document.createDocumentFragment();
-    const snapshot = app.skillgap;
+    const snapshot = app.kitingVersus;
     if (!snapshot) {
       const warn = section(
         "Snapshot real não carregado",
-        "O arquivo src/data/skillgap-levels.json não foi encontrado. Rode build_skillgap_data.py e recarregue a página.",
+        "O arquivo src/data/kitingVersus-levels.json não foi encontrado. Rode build_kitingVersus_data.py e recarregue a página.",
       );
       root.appendChild(warn);
       return root;
     }
 
     const keys = Object.keys(snapshot.trainings || {});
-    if (!keys.includes(view.skillgapKey)) view.skillgapKey = keys[0] || "";
-    const training = snapshot.trainings[view.skillgapKey];
+    if (!keys.includes(view.kitingVersusKey)) view.kitingVersusKey = keys[0] || "";
+    const training = snapshot.trainings[view.kitingVersusKey];
     const levels = training?.levels || [];
-    if (!levels.some((lv) => Number(lv.level) === Number(view.skillgapLevel))) {
-      view.skillgapLevel = levels[0]?.level ?? 1;
+    if (!levels.some((lv) => Number(lv.level) === Number(view.kitingVersusLevel))) {
+      view.kitingVersusLevel = levels[0]?.level ?? 1;
     }
-    const raw = levels.find((lv) => Number(lv.level) === Number(view.skillgapLevel)) || levels[0];
-    const key = view.skillgapKey;
-    const levelId = raw?.level ?? view.skillgapLevel;
-    const override = config.skillgapLevel(key, levelId) || {};
+    const raw = levels.find((lv) => Number(lv.level) === Number(view.kitingVersusLevel)) || levels[0];
+    const key = view.kitingVersusKey;
+    const levelId = raw?.level ?? view.kitingVersusLevel;
+    const override = config.kitingVersusLevel(key, levelId) || {};
     const effective = mergeLevel(raw, override);
 
     const head = document.createElement("div");
@@ -901,8 +901,8 @@ export function createAdmin({ app, onApply }) {
     }
     keySelect.value = key;
     keySelect.addEventListener("change", () => {
-      view.skillgapKey = keySelect.value;
-      view.skillgapLevel = 1;
+      view.kitingVersusKey = keySelect.value;
+      view.kitingVersusLevel = 1;
       render();
     });
 
@@ -918,14 +918,14 @@ export function createAdmin({ app, onApply }) {
     levelSelect.value = String(levelId);
     levelSelect.disabled = !levels.length;
     levelSelect.addEventListener("change", () => {
-      view.skillgapLevel = Number(levelSelect.value);
+      view.kitingVersusLevel = Number(levelSelect.value);
       render();
     });
 
     const badge = document.createElement("span");
     badge.className = "badge";
     const updateBadge = () => {
-      const custom = Object.keys(config.skillgapLevel(key, levelId) || {}).length > 0;
+      const custom = Object.keys(config.kitingVersusLevel(key, levelId) || {}).length > 0;
       badge.textContent = custom ? "Editado" : "Firestore";
       badge.classList.toggle("custom", custom);
     };
@@ -957,7 +957,7 @@ export function createAdmin({ app, onApply }) {
     }
 
     const setField = (path, value) => {
-      const current = structuredClone(config.skillgapLevel(key, levelId) || {});
+      const current = structuredClone(config.kitingVersusLevel(key, levelId) || {});
       const parts = path.split(".");
       let target = current;
       for (let i = 0; i < parts.length - 1; i++) {
@@ -969,7 +969,7 @@ export function createAdmin({ app, onApply }) {
       if (value === null) delete target[last];
       else target[last] = value;
       pruneEmpty(current);
-      config.setSkillgapLevel(key, levelId, Object.keys(current).length ? current : null);
+      config.setKitingVersusLevel(key, levelId, Object.keys(current).length ? current : null);
       updateBadge();
     };
 
@@ -1023,7 +1023,7 @@ export function createAdmin({ app, onApply }) {
     const actions = document.createElement("div");
     actions.className = "admin-actions";
     actions.append(
-      resetButton("Restaurar este nível", () => config.setSkillgapLevel(key, levelId, null)),
+      resetButton("Restaurar este nível", () => config.setKitingVersusLevel(key, levelId, null)),
     );
     sg.appendChild(actions);
     root.appendChild(sg);
@@ -1049,7 +1049,7 @@ export function createAdmin({ app, onApply }) {
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
           throw new Error("O JSON precisa ser um objeto.");
         }
-        config.setSkillgapLevel(key, levelId, parsed);
+        config.setKitingVersusLevel(key, levelId, parsed);
         onApply();
         render();
         flash("Nível atualizado");
@@ -1060,7 +1060,7 @@ export function createAdmin({ app, onApply }) {
         statusTimer = setTimeout(() => statusEl.classList.remove("is-on", "is-bad"), 3200);
       }
     });
-    const restore = resetButton("Voltar ao Firestore", () => config.setSkillgapLevel(key, levelId, null));
+    const restore = resetButton("Voltar ao Firestore", () => config.setKitingVersusLevel(key, levelId, null));
     jsonActions.append(apply, restore);
     advanced.append(area, jsonActions);
     root.appendChild(advanced);
@@ -1154,7 +1154,7 @@ export function createAdmin({ app, onApply }) {
     else if (view.tab === "enemies") bodyEl.appendChild(enemyPanel());
     else if (view.tab === "arena") bodyEl.appendChild(arenaPanel());
     else if (view.tab === "modos") bodyEl.appendChild(modosPanel());
-    else if (view.tab === "skillgap") bodyEl.appendChild(skillgapPanel());
+    else if (view.tab === "kitingVersus") bodyEl.appendChild(kitingVersusPanel());
     else bodyEl.appendChild(drillPanel());
   }
 
@@ -1165,7 +1165,7 @@ export function createAdmin({ app, onApply }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "skillgap-config.json";
+    link.download = "kitingVersus-config.json";
     link.click();
     URL.revokeObjectURL(url);
     flash("Configuração exportada");

@@ -9,7 +9,7 @@ import { clamp } from "../core/math.js";
 import {
   applyPlayerStats, durationOf, levelsOf, selectedChampions as pickSelectedChampions,
   slotFromAbility, withRealStats,
-} from "./skillgap.js";
+} from "./kitingVersus.js";
 
 /**
  * Dodge drill.

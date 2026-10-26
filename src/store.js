@@ -2,7 +2,7 @@
  * Local progression. Everything lives in localStorage so the trainer works
  * fully offline and the browser keeps the history between sessions.
  */
-const KEY = "skillgap-web.v1";
+const KEY = "kitingVersus-web.v1";
 
 const EMPTY = {
   version: 1,

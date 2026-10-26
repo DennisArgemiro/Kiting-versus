@@ -1,7 +1,7 @@
 /**
  * Ponte entre os dados recuperados do Skill Gap (Firestore) e o motor web.
  *
- * O snapshot é gerado por `skillgap-re/build_skillgap_data.py` e carregado
+ * O snapshot é gerado por `kitingVersus-re/build_kitingVersus_data.py` e carregado
  * uma única vez em `main.js`.  Nada aqui importa o motor: são apenas funções
  * puras de leitura/normalização, para que kiting.js e dodging.js possam montar
  * os níveis reais sem criar ciclos.
@@ -27,7 +27,7 @@ export function training(snapshot, key) {
 
 export function levelsOf(snapshot, key) {
   const levels = training(snapshot, key)?.levels || [];
-  return levels.map((level) => mergeOverride(level, config.skillgapLevel(key, level.level)));
+  return levels.map((level) => mergeOverride(level, config.kitingVersusLevel(key, level.level)));
 }
 
 export function realLevel(snapshot, key, index) {
