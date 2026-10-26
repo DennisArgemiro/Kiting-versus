@@ -717,7 +717,7 @@ export class Scene3D {
     this.updateCamera(opts.player, dt);
 
     for (let i = this.markers.length - 1; i >= 0; i--) {
-      const m = this.markers[i].
+      const m = this.markers[i];
       m.life += dt;
       const t = m.life / m.maxLife;
       m.mesh.scale.setScalar(1 + t * 1.6);
