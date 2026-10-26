@@ -5,13 +5,10 @@ import { skillshotFromSpell } from "../engine/skillshot.js";
 import { clamp, norm } from "../core/math.js";
 import { config } from "../config.js";
 
-// The drill arena: a lane segment, in League of Legends game units. The size
-// is owned by the admin screen; `syncArena()` copies it in before every drill.
 export const ARENA = { x: 0, y: 0, w: 3200, h: 1900 };
 
 const ABILITY_COOLDOWNS = { Q: 4, W: 6, E: 8, R: 12 };
 
-/** Copies the configured map size into the shared ARENA object. */
 export function syncArena() {
   const arena = config.arena();
   ARENA.w = arena.w;
@@ -19,12 +16,6 @@ export function syncArena() {
   return ARENA;
 }
 
-/**
- * Applies the global enemy multipliers to a freshly built enemy.
- *
- * The per-level specs decide the shape of the encounter; this is the global
- * knob the admin screen exposes on top of it (reach, speed, damage, health).
- */
 export function tuneEnemy(unit) {
   if (!unit) return unit;
   const c = config.combat();
@@ -42,18 +33,24 @@ export function tuneEnemy(unit) {
   return unit;
 }
 
-/** Create the player's champion instance for a drill. */
 export function makePlayer(championData, x, y, hpScale = 1, attackSpeedScale = null) {
   const combat = config.combat();
   const champConfig = config.champion(championData.alias) || {};
   const atkSpeedScale = attackSpeedScale ?? combat.playerAttackSpeedScale;
+
+  // championData.stats.attackPeriod already has the champion override applied (final value).
+  // Champion constructor multiplies by mult.attackSpeed again, so we need to pass the BASE
+  // attackPeriod (before multiplier) to get the correct final value.
+  const mult = champConfig.attackSpeed || 1;
+  const baseAttackPeriod = championData.stats.attackPeriod * mult;
+
   const player = new Champion(championData, {
     team: "player",
     x,
     y,
     hp: championData.stats.health * hpScale * combat.playerHpScale,
     hitRadius: combat.playerHitRadius,
-    attackPeriod: championData.stats.attackPeriod / atkSpeedScale,
+    attackPeriod: baseAttackPeriod / atkSpeedScale,
     attackCast: championData.stats.attackCastTime / atkSpeedScale,
     multipliers: champConfig,
   });
@@ -63,10 +60,6 @@ export function makePlayer(championData, x, y, hpScale = 1, attackSpeedScale = n
   return player;
 }
 
-/**
- * Resolve an attack whose windup just finished.
- * Melee attacks apply instantly, ranged attacks spawn a projectile.
- */
 export function resolveAttack(unit, world, target, onLanded) {
   if (!unit || !unit.alive || !target || !target.alive || !world) {
     onLanded?.(null);
@@ -102,13 +95,6 @@ export function resolveAttack(unit, world, target, onLanded) {
   onLanded?.(target);
 }
 
-/**
- * Turns raw mouse input into League style orders.
- *
- *   right click on the ground  -> move
- *   right click on an enemy   -> attack
- *   A (held) + click          -> attack-move
- */
 export function applyInput(player, input, world, onMoveMarker) {
   const controller = player.controller;
   const events = { attacked: null, cast: null, ordered: null };
@@ -126,7 +112,6 @@ export function applyInput(player, input, world, onMoveMarker) {
 
     if (click.button === 2) {
       if (attackMove) {
-        // A held + right click: attack-move
         input.consumedAttackMove = true;
         if (world && world.nearest) {
           const enemyNear = world.nearest(click.x, click.y, (player.attackRange || 550) * 1.3, (u) => u && u.alive && u.team !== player.team);
@@ -163,7 +148,6 @@ export function applyInput(player, input, world, onMoveMarker) {
       }
     } else if (click.button === 0) {
       if (attackMove) {
-        // A held + left click: attack-move
         input.consumedAttackMove = true;
         if (world && world.nearest) {
           const enemyNear = world.nearest(click.x, click.y, (player.attackRange || 550) * 1.3, (u) => u && u.alive && u.team !== player.team);
@@ -196,13 +180,6 @@ export function applyInput(player, input, world, onMoveMarker) {
   return events;
 }
 
-/**
- * Casts one of the champion's abilities at the given aim point.
- *
- * Linear abilities fire a skillshot, circular ones detonate on the ground,
- * cones sweep, and self-cast abilities heal and empower the next few
- * seconds of auto attacks.
- */
 export function castAbility(player, slot, aimX, aimY, world) {
   const spell = player.spells.get(slot);
   if (!spell) return null;
@@ -247,7 +224,6 @@ export function castAbility(player, slot, aimX, aimY, world) {
   return spell;
 }
 
-/** Ticks ability cooldowns and the temporary empowerment buff. */
 export function tickAbilities(player, dt) {
   for (const slot of ["Q", "W", "E", "R"]) {
     if ((player.abilityCooldowns[slot] ?? 0) > 0) {
@@ -260,15 +236,6 @@ export function tickAbilities(player, dt) {
   }
 }
 
-/**
- * Generic enemy behaviour.
- *
- * behaviours:
- *   'stationary'  stands still and swings when the player comes close
- *   'melee'       closes in and attacks
- *   'ranged'      keeps its distance and attacks
- *   'caster'      keeps its distance and fires skillshots
- */
 export function updateEnemy(enemy, world, player, dt, options = {}) {
   if (!enemy || !enemy.alive || !player || !player.alive) return;
 
@@ -276,7 +243,6 @@ export function updateEnemy(enemy, world, player, dt, options = {}) {
   const toPlayer = Math.hypot(player.x - enemy.x, player.y - enemy.y);
   enemy.faceTowards(player.x, player.y);
 
-  // Keep the distance the behaviour wants.
   const desired = enemy.preferredRange ?? (
     behaviour === "ranged" || behaviour === "caster"
       ? enemy.attackRange * 0.92
@@ -291,7 +257,6 @@ export function updateEnemy(enemy, world, player, dt, options = {}) {
     }
   }
 
-  // Casters are driven by the drill itself (they cast, they do not swing).
   if (behaviour === "caster") return;
 
   if (enemy.attackRange > 0 && toPlayer <= enemy.attackRange * 0.98 && enemy.canAttack()) {
@@ -299,7 +264,6 @@ export function updateEnemy(enemy, world, player, dt, options = {}) {
   }
 }
 
-/** Points on an ellipse, used to spread enemies around the arena. */
 export function ringPositions(count, cx, cy, rx, ry = rx, offset = 0) {
   const out = [];
   for (let i = 0; i < count; i++) {
@@ -309,14 +273,6 @@ export function ringPositions(count, cx, cy, rx, ry = rx, offset = 0) {
   return out;
 }
 
-/**
- * Picks the sparring partner whose attack range is closest to the player's.
- *
- * This matters: kiting is a spacing game. Against a partner with a much
- * shorter reach the fight is trivial, against a much longer one you simply
- * never get hit. A near-equal range creates the real dilemma - you can
- * attack, but only by eating a return hit unless you time the step back.
- */
 export function pickSparringPartner(champions, playerChampion) {
   const playerRange = playerChampion.stats.attackRange;
   const playerRanged = playerRange > 300;
@@ -335,5 +291,4 @@ export function pickSparringPartner(champions, playerChampion) {
   return best || champions[0];
 }
 
-/** Clamp a 0..1 value into a score contribution. */
 export const unit01 = (v) => clamp(v, 0, 1);
