@@ -40,6 +40,7 @@ const SOCKET_URL = 'http://localhost:3002';
 const ADMIN_AUTH_KEY = 'skillgap-web.admin-auth';
 const ADMIN_SESSION_KEY = 'skillgap-web.admin-session';
 const DEFAULT_ADMIN_PASSWORD_HASH = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9';
+const ADMIN_PASSWORD_HASH_ENV = (typeof ADMIN_PASSWORD_HASH !== 'undefined') ? ADMIN_PASSWORD_HASH : null;
 
 async function hashPassword(password) {
   const encoder = new TextEncoder();
@@ -52,9 +53,9 @@ async function hashPassword(password) {
 function getStoredPasswordHash() {
   try {
     const stored = localStorage.getItem('skillgap-web.admin-password');
-    return stored || DEFAULT_ADMIN_PASSWORD_HASH;
+    return stored || ADMIN_PASSWORD_HASH_ENV || DEFAULT_ADMIN_PASSWORD_HASH;
   } catch {
-    return DEFAULT_ADMIN_PASSWORD_HASH;
+    return ADMIN_PASSWORD_HASH_ENV || DEFAULT_ADMIN_PASSWORD_HASH;
   }
 }
 

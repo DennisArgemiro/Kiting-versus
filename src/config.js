@@ -27,7 +27,7 @@ export const DEFAULTS = {
     playerHpScale: 1,
     playerAttackSpeedScale: 1,
     playerHitRadius: 45,
-    showRanges: true,
+    showRanges: false,
     cameraLocked: true,
     attackMoveTargetNearest: true,
     cameraPitch: 55,
@@ -50,15 +50,15 @@ export const DEFAULTS = {
   champions: {},
   drills: {},
   skillgap: {},
-  // Drill mode toggles (admin panel).  All true by default.
+  // Drill mode toggles (admin panel). Only kiting-spacing and kiting-defensive enabled.
   modosDrills: {
     "kiting-spacing": true,
     "kiting-defensive": true,
-    "kiting-peel": true,
-    "dodge-skillshot": true,
-    "dodge-shoot-dodge": true,
-    "sg-kiting-microgame": true,
-    "sg-kiting-dodge": true,
+    "kiting-peel": false,
+    "dodge-skillshot": false,
+    "dodge-shoot-dodge": false,
+    "sg-kiting-microgame": false,
+    "sg-kiting-dodge": false,
   },
 };
 
