@@ -379,7 +379,6 @@ function startOnlineMatch() {
       lastDelta = Math.min(0.1, (now - lastFrame) / 1000);
       lastFrame = now;
       const combat = config.combat();
-      const edgeScroll = combat.cameraLocked ? null : input1.getEdgeScroll();
       try {
         arena.render(scene, {
           showRanges: true,
@@ -389,9 +388,7 @@ function startOnlineMatch() {
           focusTarget: arena.player1?.controller?.target,
           powerups: arena.powerups,
         });
-        if (arena.player1) {
-          scene.updateCamera(arena.player1, lastDelta, edgeScroll);
-        }
+        updateCameraMode("arena", input1);
         updateArenaHud(arena, input1);
         $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
         input1.endFrame();
@@ -684,9 +681,8 @@ function startDrill(drill, level) {
       lastDelta = Math.min(0.1, (now - lastFrame) / 1000);
       lastFrame = now;
       const combat = config.combat();
-      const edgeScroll = combat.cameraLocked ? null : input.getEdgeScroll();
       try { run.render(scene, { showRanges: combat.showRanges, dt: lastDelta, attackMoveActive: input.attackMoveActive, input }); } catch (e) { console.error("drill render error", e, e.stack); }
-      scene.updateCamera(run.player, lastDelta, edgeScroll);
+      updateCameraMode("drill", input);
       updateHud(run);
       $("#game-stage").classList.toggle("is-attackmove", input.attackMoveActive);
       input.endFrame();
@@ -713,6 +709,64 @@ function hintFor(drill) {
   return drill.hint || "WASD para mover, clique para atacar, botão direito para andar até o ponto.";
 }
 
+function updateChampionPortrait(player, ids) {
+  const img = document.getElementById(ids.img);
+  const levelEl = document.getElementById(ids.level);
+  const arcEl = document.getElementById(ids.arc);
+  const smallIconEl = document.getElementById(ids.smallIcon);
+  const alias = (player && (player.alias || (player.data && player.data.alias))) || "Ahri";
+  const level = (player && player.level) || 1;
+  const progress = (player && player.portraitProgress) || 0;
+
+  if (img) img.src = "./assets/champions/" + encodeURIComponent(alias) + ".png";
+  if (levelEl) levelEl.textContent = String(level);
+
+  if (arcEl) {
+    const r = 30;
+    const C = 2 * Math.PI * r;
+    const len = C * Math.max(0, Math.min(1, progress));
+    arcEl.style.strokeDasharray = len + " " + (C - len);
+  }
+
+  if (smallIconEl) {
+    smallIconEl.innerHTML = '<svg viewBox="0 0 24 24"><path d="M13 2 L4 14 h6 l-1 8 9-12 h-6 z" fill="#4ea1ff"/></svg>';
+  }
+}
+
+function updateHudBars(player, containerSelector) {
+  const container = $(containerSelector);
+  if (!container) return;
+  const fills = container.querySelectorAll(".hud-bar-fill");
+  const texts = container.querySelectorAll(".hud-bar-text");
+  if (!fills.length) return;
+  const hpMax = player.maxHp || 1;
+  const hpPct = Math.max(0, Math.min(1, (player.hp ?? 0) / hpMax));
+  const resMax = player.resourceMax || player.maxHp * 0.3;
+  const resCur = player.resourceCur ?? resMax * 0.5;
+  const resPct = Math.max(0, Math.min(1, resMax > 0 ? resCur / resMax : 0));
+  fills[0].style.width = (hpPct * 100).toFixed(1) + "%";
+  texts[0].textContent = String(Math.round(player.hp ?? 0));
+  fills[1].style.width = (resPct * 100).toFixed(1) + "%";
+  texts[1].textContent = String(Math.round(resCur));
+}
+
+const cameraModeEls = { drill: null, arena: null };
+function updateCameraMode(which, input) {
+  if (!input) return;
+  if (!cameraModeEls[which]) {
+    cameraModeEls[which] = document.getElementById(which === "arena" ? "arena-camera-mode" : "hud-camera-mode");
+  }
+  const el = cameraModeEls[which];
+  if (!el) return;
+  const free = !input.cameraLocked;
+  const centering = free && typeof input.down === "function" && input.down("Space");
+  const state = !free ? "locked" : centering ? "centering" : "free";
+  if (el.dataset.state === state) return;
+  el.dataset.state = state;
+  const text = el.querySelector(".camera-mode-text");
+  if (text) text.textContent = !free ? "Câmera fixa" : centering ? "Câmera no campeão" : "Câmera livre";
+}
+
 function updateHud(run) {
   const hpPct = Math.max(0, Math.min(1, run.player.hp / run.player.maxHp));
   const hpBar = $("#hud-hp");
@@ -723,6 +777,8 @@ function updateHud(run) {
     updateHud._abilitiesInited = true;
   }
   updateAbilitiesCooldowns(run.player, "#hud-abilities");
+  updateHudBars(run.player, "#hud-abilities");
+  updateChampionPortrait(run.player, { img: "hud-portrait-img", level: "hud-portrait-level", arc: "hud-portrait-arc", smallIcon: "hud-portrait-small-icon" });
   updateAttributesHud(run.player, "#hud-attributes");
   hpBar.style.width = `${hpPct * 100}%`;
   hpBar.parentElement.classList.toggle("low", hpPct < 0.35);
@@ -735,8 +791,15 @@ function updateHud(run) {
       updateHud._lastReady = left;
       banner(label, "");
     }
-    $("#hud-timer").textContent = formatTime(run.duration);
-    $("#hud-score").textContent = "—";
+    const readyTimeText = formatTime(run.duration);
+    if (updateHud._lastTimerText !== readyTimeText) {
+      updateHud._lastTimerText = readyTimeText;
+      $("#hud-timer").textContent = readyTimeText;
+    }
+    if (updateHud._lastScore !== "—") {
+      updateHud._lastScore = "—";
+      $("#hud-score").textContent = "—";
+    }
     return;
   }
   if (updateHud._lastReady !== undefined) {
@@ -744,24 +807,39 @@ function updateHud(run) {
     banner("Comece!", "good");
   }
 
-  $("#hud-timer").textContent = formatTime(run.timeLeft);
+  const timeLeftText = formatTime(run.timeLeft);
+  if (updateHud._lastTimerText !== timeLeftText) {
+    updateHud._lastTimerText = timeLeftText;
+    $("#hud-timer").textContent = timeLeftText;
+  }
   $("#hud-timer").classList.toggle("is-low", run.timeLeft <= 10 && run.timeLeft > 0);
 
   const result = run.result();
-  $("#hud-score").textContent = result.score;
+  const scoreText = String(result.score);
+  if (updateHud._lastScore !== scoreText) {
+    updateHud._lastScore = scoreText;
+    $("#hud-score").textContent = scoreText;
+  }
 
   const chips = run.hud();
   if (run.player.controller) {
     chips.unshift({ label: "Ordem", value: orderLabel(run.player.controller) });
   }
-  $("#hud-stats").innerHTML = chips
+  const statsHtml = chips
     .map((c) => `<span class="stat-chip ${c.tone || ""}">${c.label}<b>${c.value}</b></span>`)
     .join("");
+  if (updateHud._lastStatsHtml !== statsHtml) {
+    updateHud._lastStatsHtml = statsHtml;
+    $("#hud-stats").innerHTML = statsHtml;
+  }
 
   const coach = run.coach ? run.coach() : "";
-  const coachEl = $("#hud-coach");
-  coachEl.textContent = coach;
-  coachEl.classList.toggle("is-alert", /incoming|Recue|Clique/.test(coach));
+  if (updateHud._lastCoach !== coach) {
+    updateHud._lastCoach = coach;
+    const coachEl = $("#hud-coach");
+    coachEl.textContent = coach;
+    coachEl.classList.toggle("is-alert", /incoming|Recue|Clique/.test(coach));
+  }
 }
 
 function finishDrill() {
@@ -998,6 +1076,29 @@ function bindGlobalEvents() {
     }
   });
 
+  ["#hud-stats", "#arena-hud-stats"].forEach((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.classList.add("hud-status", "hud-status--right");
+  });
+
+  const hudStatusToggle = document.getElementById("hud-status-toggle");
+  if (hudStatusToggle) {
+    hudStatusToggle.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      app.hudStatusRetracted = !app.hudStatusRetracted;
+      const side = app.hudStatusRetracted ? "left" : "right";
+      ["#hud-stats", "#arena-hud-stats"].forEach((sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return;
+        el.classList.remove("hud-status", "hud-status--right", "hud-status--left");
+        el.classList.add("hud-status", side === "left" ? "hud-status--left" : "hud-status--right");
+      });
+      hudStatusToggle.textContent = side === "left" ? "\u2190" : "\u2192";
+    });
+  }
+
   window.addEventListener("keydown", (e) => {
     if (e.code === "Escape" && app.session) {
       abortDrill();
@@ -1197,7 +1298,6 @@ function startArena(opts) {
       lastDelta = Math.min(0.1, (now - lastFrame) / 1000);
       lastFrame = now;
       const combat = config.combat();
-      const edgeScroll = combat.cameraLocked ? null : input1.getEdgeScroll();
       
       try {
         const attackMoveActive = input1.attackMoveActive;
@@ -1215,9 +1315,7 @@ function startArena(opts) {
           powerups: arena.powerups,
           opponent: app.onlineOpponent,
         });
-        if (arena.player1) {
-          scene.updateCamera(arena.player1, lastDelta, edgeScroll);
-        }
+        updateCameraMode("arena", input1);
         updateArenaHud(arena, input1);
         $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
         input1.endFrame();
@@ -1368,6 +1466,7 @@ function updateArenaHud(arena, input) {
   
   if (arena.abilitiesEnabled) {
     updateAbilitiesCooldowns(arena.player1, "#arena-hud-abilities");
+    updateChampionPortrait(arena.player1, { img: "arena-hud-portrait-img", level: "arena-hud-portrait-level", arc: "arena-hud-portrait-arc", smallIcon: "arena-hud-portrait-small-icon" });
   }
   
   if (!updateArenaHud._attributesInited) {
@@ -1407,12 +1506,24 @@ function renderAbilitiesHud(player, containerSelector) {
   }
   
   const spells = player.data.spells.filter(function(s) { return s.slot !== 'P'; });
-  container.innerHTML = spells.map(function(spell) {
+  const slotsHtml = spells.map(function(spell) {
     return '<div class="ability-slot" data-slot="' + spell.slot + '">' +
       '<div class="cooldown-overlay ready" id="cd-' + spell.slot + '"></div>' +
       '<span class="key-hint">' + spell.slot + '</span>' +
     '</div>';
   }).join("");
+
+  const hpMax = player.maxHp || 1;
+  const hpPct = Math.max(0, Math.min(1, (player.hp ?? 0) / hpMax));
+  const resMax = player.resourceMax || player.maxHp * 0.3;
+  const resCur = player.resourceCur ?? resMax * 0.5;
+  const resPct = Math.max(0, Math.min(1, resMax > 0 ? resCur / resMax : 0));
+
+  container.innerHTML = '<div class="ability-row">' + slotsHtml + '</div>' +
+    '<div class="hud-bars">' +
+      '<div class="hud-bar"><div class="hud-bar-fill" style="width:' + (hpPct * 100).toFixed(1) + '%"></div><div class="hud-bar-text">' + Math.round(player.hp ?? 0) + '</div></div>' +
+      '<div class="hud-bar"><div class="hud-bar-fill resource" style="width:' + (resPct * 100).toFixed(1) + '%"></div><div class="hud-bar-text">' + Math.round(resCur) + '</div></div>' +
+    '</div>';
   
   spells.forEach(function(spell) {
     const slot = container.querySelector('[data-slot="' + spell.slot + '"]');
@@ -1454,25 +1565,25 @@ function renderAttributesHud(player, containerSelector) {
   if (!container) return;
   
   const s = player.data?.stats || {};
-  const mult = player.multipliers || {};
+  const mods = player.statModifiers || {};
   const buffAtkSpd = player.buffAttackSpeed || 1;
   const buffMovSpd = player.buffMoveSpeed || 1;
-  
+  const pctOf = (key) => Math.round(((mods[key] ?? 1) - 1) * 100);
+
   const attrs = [
-    { key: 'health', icon: '❤️', label: 'Vida', value: Math.round((s.health || 0) * (mult.health || 1)), base: s.health },
-    { key: 'attackDamage', icon: '⚔️', label: 'Dano', value: Math.round((s.attackDamage || 0) * (mult.attackDamage || 1)), base: s.attackDamage },
-    { key: 'attackRange', icon: '🎯', label: 'Alcance', value: Math.round((s.attackRange || 0) * (mult.attackRange || 1)), base: s.attackRange },
-    { key: 'attackSpeed', icon: '🏹', label: 'AA/s', value: ((1 / (s.attackPeriod || 0.625)) * (mult.attackSpeed || 1) * (player.buffAttackSpeed || 1)).toFixed(2), base: 1 / (s.attackPeriod || 0.625) },
-    { key: 'attackCastTime', icon: '⏱️', label: 'Windup', value: ((s.attackCastTime || 0.3) * (mult.attackCastTime || 1) * 1000).toFixed(0) + 'ms', base: s.attackCastTime * 1000 },
-    { key: 'movementSpeed', icon: '👟', label: 'Vel. Mov', value: Math.round((s.movementSpeed || 0) * (mult.movementSpeed || 1) * (player.buffMoveSpeed || 1)), base: s.movementSpeed },
-    { key: 'projectileSpeed', icon: '🚀', label: 'Vel. Proj', value: Math.round((s.projectileSpeed || 0) * (mult.projectileSpeed || 1)), base: s.projectileSpeed },
-    { key: 'armor', icon: '🛡️', label: 'Armadura', value: Math.round((s.armor || 0) * (mult.armor || 1)), base: s.armor },
-    { key: 'magicResistance', icon: '🔮', label: 'Res. Mág', value: Math.round((s.magicResistance || 0) * (mult.magicResistance || 1)), base: s.magicResistance },
+    { key: 'health', icon: '❤️', label: 'Vida', value: Math.round(s.health || 0) },
+    { key: 'attackDamage', icon: '⚔️', label: 'Dano', value: Math.round(s.attackDamage || 0) },
+    { key: 'attackRange', icon: '🎯', label: 'Alcance', value: Math.round(s.attackRange || 0) },
+    { key: 'attackSpeed', icon: '🏹', label: 'AA/s', value: ((1 / (s.attackPeriod || 0.625)) * buffAtkSpd).toFixed(2) },
+    { key: 'attackCastTime', icon: '⏱️', label: 'Windup', value: Math.round((s.attackCastTime || 0.3) * 1000) + 'ms' },
+    { key: 'movementSpeed', icon: '👟', label: 'Vel. Mov', value: Math.round((s.movementSpeed || 0) * buffMovSpd) },
+    { key: 'projectileSpeed', icon: '🚀', label: 'Vel. Proj', value: Math.round(s.projectileSpeed || 0) },
+    { key: 'armor', icon: '🛡️', label: 'Armadura', value: Math.round(s.armor || 0) },
+    { key: 'magicResistance', icon: '🔮', label: 'Res. Mág', value: Math.round(s.magicResistance || 0) },
   ];
-  
+
   container.innerHTML = attrs.map(function(a) {
-    const multVal = a.base > 0 ? (a.value / a.base) : 1;
-    const pct = Math.round((multVal - 1) * 100);
+    const pct = pctOf(a.key);
     let tone = 'neutral';
     if (pct > 0) tone = 'positive';
     else if (pct < 0) tone = 'negative';
@@ -1492,44 +1603,41 @@ function updateAttributesHud(player, containerSelector) {
   if (items.length === 0) return;
   
   const s = player.data?.stats || {};
-  const mult = player.multipliers || {};
+  const mods = player.statModifiers || {};
   const buffAtkSpd = player.buffAttackSpeed || 1;
   const buffMovSpd = player.buffMoveSpeed || 1;
-  
+  const pctOf = (key) => Math.round(((mods[key] ?? 1) - 1) * 100);
+
   const attrs = [
-    { key: 'health', value: Math.round((s.health || 0) * (mult.health || 1)) },
-    { key: 'attackDamage', value: Math.round((s.attackDamage || 0) * (mult.attackDamage || 1)) },
-    { key: 'attackRange', value: Math.round((s.attackRange || 0) * (mult.attackRange || 1)) },
-    { key: 'attackSpeed', value: ((1 / (s.attackPeriod || 0.625)) * (mult.attackSpeed || 1) * (player.buffAttackSpeed || 1)).toFixed(2) },
-    { key: 'attackCastTime', value: ((s.attackCastTime || 0.3) * (mult.attackCastTime || 1) * 1000).toFixed(0) + 'ms' },
-    { key: 'movementSpeed', value: Math.round((s.movementSpeed || 0) * (mult.movementSpeed || 1) * (player.buffMoveSpeed || 1)) },
-    { key: 'projectileSpeed', value: Math.round((s.projectileSpeed || 0) * (mult.projectileSpeed || 1)) },
-    { key: 'armor', value: Math.round((s.armor || 0) * (mult.armor || 1)) },
-    { key: 'magicResistance', value: Math.round((s.magicResistance || 0) * (mult.magicResistance || 1)) },
+    { key: 'health', value: Math.round(s.health || 0) },
+    { key: 'attackDamage', value: Math.round(s.attackDamage || 0) },
+    { key: 'attackRange', value: Math.round(s.attackRange || 0) },
+    { key: 'attackSpeed', value: ((1 / (s.attackPeriod || 0.625)) * buffAtkSpd).toFixed(2) },
+    { key: 'attackCastTime', value: Math.round((s.attackCastTime || 0.3) * 1000) + 'ms' },
+    { key: 'movementSpeed', value: Math.round((s.movementSpeed || 0) * buffMovSpd) },
+    { key: 'projectileSpeed', value: Math.round(s.projectileSpeed || 0) },
+    { key: 'armor', value: Math.round(s.armor || 0) },
+    { key: 'magicResistance', value: Math.round(s.magicResistance || 0) },
   ];
-  
+
+  const sig = attrs.map((a) => `${a.key}:${a.value}`).join("|");
+  if (updateAttributesHud._lastSig === sig) return;
+  updateAttributesHud._lastSig = sig;
+
   attrs.forEach(function(a, i) {
     const item = items[i];
     if (!item) return;
     const valueEl = item.querySelector('.attr-value');
-    let base;
-    if (a.key === 'attackSpeed') {
-      base = 1 / (s.attackPeriod || 0.625);
-    } else {
-      base = s[Object.keys(s).find(k => k === a.key)] || 1;
-    }
-    const multVal = base > 0 ? (a.value / base) : 1;
-    const pct = Math.round((multVal - 1) * 100);
+    const pctEl = item.querySelector('.attr-pct');
+    const pct = pctOf(a.key);
     let tone = 'neutral';
     if (pct > 0) tone = 'positive';
     else if (pct < 0) tone = 'negative';
     if (valueEl) {
-      valueEl.textContent = a.value + ' ';
-      const small = document.createElement('small');
-      small.textContent = '(' + (pct >= 0 ? '+' : '') + pct + '%)';
-      valueEl.innerHTML = a.value + ' ' + small.outerHTML;
+      valueEl.textContent = a.value;
       valueEl.className = 'attr-value ' + tone;
     }
+    if (pctEl) pctEl.textContent = '(' + (pct >= 0 ? '+' : '') + pct + '%)';
   });
 }
 

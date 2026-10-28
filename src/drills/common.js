@@ -35,26 +35,22 @@ export function tuneEnemy(unit) {
 
 export function makePlayer(championData, x, y, hpScale = 1, attackSpeedScale = null) {
   const combat = config.combat();
-  const champConfig = config.champion(championData.alias) || {};
   const atkSpeedScale = attackSpeedScale ?? combat.playerAttackSpeedScale;
 
-  // championData.stats.attackPeriod already has the champion override applied (final value).
-  // Champion constructor multiplies by mult.attackSpeed again, so we need to pass the BASE
-  // attackPeriod (final / multiplier) so Champion's multiplication gives the correct final value.
-  const mult = champConfig.attackSpeed || 1;
-  const baseAttackPeriod = championData.stats.attackPeriod / mult;
-
+  // championData.stats already contains the champion multipliers (baked in by
+  // applyChampionOverrides), so the values below are final: do not apply them again.
   const player = new Champion(championData, {
     team: "player",
     x,
     y,
     hp: championData.stats.health * hpScale * combat.playerHpScale,
     hitRadius: combat.playerHitRadius,
-    attackPeriod: baseAttackPeriod / atkSpeedScale,
+    attackPeriod: championData.stats.attackPeriod / atkSpeedScale,
     attackCast: championData.stats.attackCastTime / atkSpeedScale,
-    multipliers: champConfig,
   });
   player.isPlayer = true;
+  // Display-only: lets the HUD show the configured modifier percentages.
+  player.statModifiers = config.champion(championData.alias) || {};
   player.abilityCooldowns = { Q: 0, W: 0, E: 0, R: 0 };
   player.controller = new Controller(player);
   return player;
@@ -192,6 +188,9 @@ export function castAbility(player, slot, aimX, aimY, world) {
     return spell;
   }
 
+  // Conjurações direcionadas giram o campeão para o ponto mirado (como no LoL).
+  if (typeof player.faceTowards === "function") player.faceTowards(aimX, aimY);
+
   if (spell.shape === "circle") {
     const shot = skillshotFromSpell(
       spell, player, aimX, aimY, "player", player.attackDamage * 1.2,
@@ -282,6 +281,24 @@ export function pickSparringPartner(champions, playerChampion) {
     }
   }
   return best || champions[0];
+}
+
+
+/**
+ * Renderiza o mundo do drill em cena 3D com opções padronizadas.
+ * Garante que flags de controle (zoom, attackMove, ranges, foco) sejam
+ * sempre propagadas — evita que drills individualmente omitam o input.
+ */
+export function renderDrillScene(scene, world, opts = {}) {
+  if (!scene) return;
+  scene.render(world, {
+    player: opts.player,
+    showRanges: opts.showRanges !== false,
+    attackMoveActive: opts.attackMoveActive,
+    input: opts.input,
+    focusTarget: opts.focusTarget,
+    dt: opts.dt,
+  });
 }
 
 export const unit01 = (v) => clamp(v, 0, 1);

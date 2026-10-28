@@ -97,7 +97,6 @@ export class Input {
     this.keys.clear();
     this.pressed.clear();
     this.clicks.length = 0;
-    this._cameraLocked = true;
     this.mouse.x = 0;
     this.mouse.y = 0;
     this._lastClient = null;
@@ -131,10 +130,10 @@ export class Input {
     const cx = this._lastClient.x;
     const cy = this._lastClient.y;
     let dx = 0, dy = 0;
-    if (cx < edge) dx = -1;
-    else if (cx > rect.width - edge) dx = 1;
-    if (cy < edge) dy = -1;
-    else if (cy > rect.height - edge) dy = 1;
+    if (cx <= rect.left + edge) dx = -1;
+    else if (cx >= rect.right - edge) dx = 1;
+    if (cy <= rect.top + edge) dy = -1;
+    else if (cy >= rect.bottom - edge) dy = 1;
     if (dx === 0 && dy === 0) return null;
     const len = Math.hypot(dx, dy);
     return { x: dx / len, y: dy / len };

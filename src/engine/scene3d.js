@@ -146,6 +146,7 @@ export class Scene3D {
       this.attackMoveMesh = null;
     }
     this.cameraFocus.set(0, 0, 0);
+    this._freeCamReady = false;
   }
 
   resize() {
@@ -501,7 +502,11 @@ export class Scene3D {
 
       if (shot.kind === "linear") {
         const len = Math.max(40, shot.traveled);
-        const angle = Math.atan2(shot.dirX, shot.dirY);
+        // The quad is laid flat by Rx(-90deg) and then spun by Rz. To make its
+        // local +Y point along the shot direction on the ground plane, the spin
+        // must be atan2(-dirX, -dirY) (the naive atan2(dirX, dirY) mirrors the
+        // beam across the X axis, which made shots point the wrong way).
+        const angle = Math.atan2(-shot.dirX, -shot.dirY);
         view.mesh.visible = true;
         view.mesh.scale.set(shot.width * 2, len, 1);
         view.mesh.position.set(
@@ -509,11 +514,11 @@ export class Scene3D {
           4,
           shot.y + shot.dirY * (shot.traveled / 2),
         );
-        view.mesh.rotation.set(-Math.PI / 2, 0, -angle);
+        view.mesh.rotation.set(-Math.PI / 2, 0, angle);
         view.edge.visible = true;
         view.edge.scale.set(shot.width * 2, 14, 1);
         view.edge.position.set(shot.headX, 5, shot.headY);
-        view.edge.rotation.set(-Math.PI / 2, 0, -angle);
+        view.edge.rotation.set(-Math.PI / 2, 0, angle);
         if (shot.phase === "telegraph") {
           view.mat.opacity = 0.12;
         } else {
@@ -535,7 +540,7 @@ export class Scene3D {
         view.mesh.geometry.dispose();
         view.mesh.geometry = new THREE.CircleGeometry(shot.length, 32, -Math.PI / 2, Math.PI / 3);
         view.mesh.position.set(shot.x, 4, shot.y);
-        view.mesh.rotation.set(-Math.PI / 2, 0, Math.atan2(shot.dirX, shot.dirY) - Math.PI / 2);
+        view.mesh.rotation.set(-Math.PI / 2, 0, Math.atan2(shot.dirX, shot.dirY) - Math.PI / 6);
         view.mat.opacity = 0.18;
       }
     }
@@ -740,7 +745,22 @@ export class Scene3D {
     this.syncEffects(world);
     this.syncPowerups(opts.powerups);
     this.setFocusTarget(opts.focusTarget);
-    this.updateCamera(opts.player, dt);
+
+    let cameraLocked = opts.cameraLocked;
+    if (cameraLocked === undefined) cameraLocked = input ? input.cameraLocked !== false : true;
+    let snap = false;
+    let edgeScroll = null;
+    if (!cameraLocked && opts.player) {
+      // Holding Space pins the camera on the champion, even with a free camera.
+      const centering = input && typeof input.down === "function" && input.down("Space");
+      if (centering) {
+        cameraLocked = true;
+        snap = true;
+      } else if (input && typeof input.getEdgeScroll === "function") {
+        edgeScroll = input.getEdgeScroll();
+      }
+    }
+    this.updateCamera(opts.player, dt, edgeScroll, cameraLocked, snap);
 
     for (let i = this.markers.length - 1; i >= 0; i--) {
       const m = this.markers[i];
@@ -786,25 +806,28 @@ export class Scene3D {
     if (unit) this.focus.position.set(unit.x, 5, unit.y);
   }
 
-  updateCamera(player, dt, edgeScroll = null) {
+  updateCamera(player, dt, edgeScroll = null, cameraLocked = true, snap = false) {
     if (!player || !this.camera || !this.cameraFocus) return;
     const arena = this.arena || { x: 0, y: 0, w: 3200, h: 1900 };
+    const clampX = (x) => Math.max(arena.x + 120, Math.min(arena.x + arena.w - 120, x));
+    const clampZ = (z) => Math.max(arena.y + 120, Math.min(arena.y + arena.h - 120, z));
 
-    if (edgeScroll) {
-      const speed = 2200 * dt;
-      this.cameraFocus.x += edgeScroll.x * speed;
-      this.cameraFocus.z += edgeScroll.y * speed;
-
-      this.cameraFocus.x = Math.max(arena.x + 120, Math.min(arena.x + arena.w - 120, this.cameraFocus.x));
-      this.cameraFocus.z = Math.max(arena.y + 120, Math.min(arena.y + arena.h - 120, this.cameraFocus.z));
+    if (cameraLocked) {
+      this._freeCamReady = false;
+      this.focusTarget.set(clampX(player.x), 0, clampZ(player.y));
+      if (snap) this.cameraFocus.copy(this.focusTarget);
+      else this.cameraFocus.lerp(this.focusTarget, 1 - Math.pow(0.0015, dt));
     } else {
-      const focusX = player.x;
-      const focusZ = player.y;
-      const clampX = Math.max(arena.x + 120, Math.min(arena.x + arena.w - 120, focusX));
-      const clampZ = Math.max(arena.y + 120, Math.min(arena.y + arena.h - 120, focusZ));
-      this.focusTarget.set(clampX, 0, clampZ);
-      const k = 1 - Math.pow(0.0015, dt);
-      this.cameraFocus.lerp(this.focusTarget, k);
+      // Unlocked camera: stays where the player left it instead of snapping back.
+      if (!this._freeCamReady) {
+        this.cameraFocus.set(clampX(player.x), 0, clampZ(player.y));
+        this._freeCamReady = true;
+      }
+      if (edgeScroll) {
+        const speed = 2200 * dt;
+        this.cameraFocus.x = clampX(this.cameraFocus.x + edgeScroll.x * speed);
+        this.cameraFocus.z = clampZ(this.cameraFocus.z + edgeScroll.y * speed);
+      }
     }
 
     const zoom = this.zoom || 1;

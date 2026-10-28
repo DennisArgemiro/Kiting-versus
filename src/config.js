@@ -289,10 +289,14 @@ export function applyChampionOverrides(champions) {
     for (const field of CHAMPION_FIELDS) {
       if (field === "attackSpeed") continue;
       const value = override[field];
-      if (typeof value === "number" && Number.isFinite(value)) stats[field] = value;
+      // Overrides are multipliers (1.2 = +20%), so scale the champion's own
+      // base value instead of replacing it with the multiplier itself.
+      if (typeof value === "number" && Number.isFinite(value) && typeof stats[field] === "number") {
+        stats[field] = stats[field] * value;
+      }
     }
     if (typeof override.attackSpeed === "number" && override.attackSpeed > 0) {
-      const baseAaPerSec = 1 / stats.attackPeriod;
+      const baseAaPerSec = stats.attackPeriod > 0 ? 1 / stats.attackPeriod : (stats.attackSpeed || 1);
       stats.attackSpeed = baseAaPerSec * override.attackSpeed;
       stats.attackPeriod = 1 / stats.attackSpeed;
     }

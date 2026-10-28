@@ -490,6 +490,7 @@ export class ArenaMode {
         player: this.player1, // primary view follows p1
         showRanges: opts.showRanges !== false,
         attackMoveActive: opts.attackMoveActive,
+        input: opts.input,
         focusTarget: opts.focusTarget,
         punishTarget: opts.punishTarget,
         dt: opts.dt,

@@ -2,7 +2,7 @@ import { World } from "../engine/world.js";
 import { Champion } from "../engine/unit.js";
 import { skillshotFromSpell } from "../engine/skillshot.js";
 import {
-  ARENA, applyInput, castAbility, makePlayer, pickSparringPartner, resolveAttack,
+  ARENA, applyInput, castAbility, makePlayer, pickSparringPartner, renderDrillScene, resolveAttack,
   tickAbilities, tuneEnemy, updateEnemy, unit01,
 } from "./common.js";
 import { clamp } from "../core/math.js";
@@ -106,6 +106,10 @@ class KitingDrill {
   }
 
   spawnEnemies(params) {
+    if (params.legacyDummy) {
+      this.spawnLegacyDummy(params);
+      return;
+    }
     const roster = params.enemies;
     const positions = this.placeEnemies(roster.length, params.spread ?? 1);
     roster.forEach((spec, i) => {
@@ -138,6 +142,94 @@ class KitingDrill {
     });
   }
 
+  spawnLegacyDummy(params) {
+    const dummyHp = params.dummyHp ?? this.player.attackDamage * 3;
+    const dummy = new Champion(
+      { stats: { health: dummyHp, attackDamage: 0, attackRange: 0, movementSpeed: params.dummyMoveSpeed ?? 200, attackPeriod: 0.625, attackCastTime: 0.25, projectileSpeed: 0, armor: 0, magicResistance: 0 } },
+      {
+        team: "enemy",
+        x: this.player.x + this.player.attackRange * 1.2,
+        y: this.player.y,
+        hp: dummyHp,
+        radius: 40,
+        moveSpeed: params.dummyMoveSpeed ?? 200,
+        attackRange: 0,
+        attackPeriod: 0.625,
+        attackCast: 0.25,
+        attackDamage: 0,
+        projectileSpeed: 0,
+        isMelee: false,
+      }
+    );
+    dummy.name = "LegacyDummy";
+    dummy.behaviour = "melee";
+    dummy.isDummy = true;
+    dummy.maxHp = dummyHp;
+    dummy.hp = dummyHp;
+    dummy.hitsTaken = 0;
+    dummy.hitsToKill = params.dummyHitsToKill ?? 1;
+    this.world.add(dummy);
+    this.enemies.push(dummy);
+    this.metrics.totalEnemyHp += dummy.maxHp;
+    this.metrics.maxEnemyHp += dummy.maxHp;
+    this.legacyDummy = dummy;
+    this.legacyDummyParams = params;
+  }
+
+  updateLegacyDummy(dt, world, player) {
+    const dummy = this.legacyDummy;
+    const params = this.legacyDummyParams;
+
+    if (!dummy) return;
+
+    if (!dummy.alive) {
+      if (!dummy.respawnAt) {
+        dummy.respawnAt = world.time + (params.respawnDelay ?? 3);
+        this.metrics.kills += 1;
+        world.effect("ring", dummy.x, dummy.y, {
+          color: "#46d39a", radius: 60, grow: 320, duration: 0.6,
+        });
+      } else if (world.time >= dummy.respawnAt) {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = player.attackRange * 1.2;
+        dummy.x = player.x + Math.cos(angle) * distance;
+        dummy.y = player.y + Math.sin(angle) * distance;
+        dummy.hp = dummy.maxHp;
+        dummy.alive = true;
+        dummy.counted = false;
+        dummy.casting = 0;
+        dummy.attackTimer = 0;
+        dummy.pendingTarget = null;
+        dummy.respawnAt = null;
+        dummy.hitsTaken = 0;
+        world.effect("ring", dummy.x, dummy.y, {
+          color: "#4ea1ff", radius: 40, grow: 260, duration: 0.5,
+        });
+      }
+      return;
+    }
+
+    const dx = player.x - dummy.x;
+    const dy = player.y - dummy.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 1) {
+      const speed = dummy.moveSpeed || (params.dummyMoveSpeed ?? 200);
+      dummy.x += (dx / dist) * speed * dt;
+      dummy.y += (dy / dist) * speed * dt;
+    }
+
+    const enemyResolved = dummy.tickTimers(dt);
+    if (enemyResolved) {
+      resolveAttack(dummy, world, enemyResolved, null);
+    }
+
+    if (!this.finished) {
+      if (dist <= player.attackRange) {
+        this.metrics.timeInRange += dt;
+      }
+    }
+  }
+
   placeEnemies(count, spread = 1) {
     const out = [];
     const startX = this.player.x + this.player.attackRange * 1.25;
@@ -165,6 +257,10 @@ class KitingDrill {
         }
       }
       return;
+    }
+
+    if (this.legacyDummy) {
+      this.updateLegacyDummy(dt, world, player);
     }
 
     if (!this.finished) {
@@ -206,18 +302,21 @@ class KitingDrill {
       });
     }
 
-    for (const enemy of this.enemies) {
-      if (!enemy.alive) continue;
-      const target = this.enemyTarget ? this.enemyTarget(enemy) : player;
-      updateEnemy(enemy, world, target, dt, { speedScale: 1 });
-      const enemyResolved = enemy.tickTimers(dt);
-      if (enemyResolved) {
-        resolveAttack(enemy, world, enemyResolved, null);
+    if (!this.legacyDummy) {
+      for (const enemy of this.enemies) {
+        if (!enemy.alive) continue;
+        const target = this.enemyTarget ? this.enemyTarget(enemy) : player;
+        updateEnemy(enemy, world, target, dt, { speedScale: 1 });
+        const enemyResolved = enemy.tickTimers(dt);
+        if (enemyResolved) {
+          resolveAttack(enemy, world, enemyResolved, null);
+        }
       }
     }
 
-    for (const enemy of this.enemies) {
-      if (!enemy.alive || enemy.behaviour !== "caster") continue;
+    if (!this.legacyDummy) {
+      for (const enemy of this.enemies) {
+        if (!enemy.alive || enemy.behaviour !== "caster") continue;
       enemy.casterTimer = (enemy.casterTimer ?? 1.5) - dt;
       const d = Math.hypot(player.x - enemy.x, player.y - enemy.y);
       if (enemy.casterTimer <= 0 && d <= (enemy.preferredRange ?? 1300)) {
@@ -228,6 +327,7 @@ class KitingDrill {
             skillshotFromSpell(spell, enemy, player.x, player.y, "enemy", enemy.attackDamage * 1.5),
           );
         }
+      }
       }
     }
 
@@ -264,29 +364,31 @@ class KitingDrill {
       }
     }
 
-    for (const enemy of this.enemies) {
-      if (enemy.alive || enemy.counted) continue;
-      enemy.counted = true;
-      this.metrics.kills += 1;
-      world.effect("ring", enemy.x, enemy.y, {
-        color: "#46d39a", radius: 60, grow: 320, duration: 0.6,
-      });
-      this.respawns.push({ enemy, at: world.time + 3 });
-    }
-    for (let i = this.respawns.length - 1; i >= 0; i--) {
-      const entry = this.respawns[i];
-      if (world.time < entry.at) continue;
-      this.respawns.splice(i, 1);
-      const enemy = entry.enemy;
-      enemy.hp = enemy.maxHp;
-      enemy.alive = true;
-      enemy.counted = false;
-      enemy.casting = 0;
-      enemy.attackTimer = 0;
-      enemy.pendingTarget = null;
-      world.effect("ring", enemy.x, enemy.y, {
-        color: "#4ea1ff", radius: 40, grow: 260, duration: 0.5,
-      });
+    if (!this.legacyDummy) {
+      for (const enemy of this.enemies) {
+        if (enemy.alive || enemy.counted) continue;
+        enemy.counted = true;
+        this.metrics.kills += 1;
+        world.effect("ring", enemy.x, enemy.y, {
+          color: "#46d39a", radius: 60, grow: 320, duration: 0.6,
+        });
+        this.respawns.push({ enemy, at: world.time + 3 });
+      }
+      for (let i = this.respawns.length - 1; i >= 0; i--) {
+        const entry = this.respawns[i];
+        if (world.time < entry.at) continue;
+        this.respawns.splice(i, 1);
+        const enemy = entry.enemy;
+        enemy.hp = enemy.maxHp;
+        enemy.alive = true;
+        enemy.counted = false;
+        enemy.casting = 0;
+        enemy.attackTimer = 0;
+        enemy.pendingTarget = null;
+        world.effect("ring", enemy.x, enemy.y, {
+          color: "#4ea1ff", radius: 40, grow: 260, duration: 0.5,
+        });
+      }
     }
 
     world.update(dt);
@@ -300,10 +402,11 @@ class KitingDrill {
   }
 
   render(scene, opts) {
-    scene.render(this.world, {
+    renderDrillScene(scene, this.world, {
       player: this.player,
       showRanges: opts.showRanges !== false,
       attackMoveActive: opts.attackMoveActive,
+      input: opts.input,
       focusTarget: this.focusTarget(),
       dt: opts.dt,
     });
@@ -630,7 +733,7 @@ class SpacingKitingDrill {
   render(scene, opts) {
     if (!scene) return;
     try {
-      scene.render(this.world, {
+      renderDrillScene(scene, this.world, {
         player: this.player,
         showRanges: opts.showRanges !== false,
         attackMoveActive: opts.attackMoveActive,
@@ -929,13 +1032,13 @@ class SurvivalDrill {
   }
 
   render(scene, opts) {
-    scene.render(this.world, {
+    renderDrillScene(scene, this.world, {
       player: this.player,
       showRanges: opts.showRanges !== false,
       attackMoveActive: opts.attackMoveActive,
+      input: opts.input, // essencial: consome o zoom via roda do mouse
       focusTarget: this.focusTarget(),
       dt: opts.dt,
-      input: opts.input, // essencial: consome o zoom via roda do mouse
     });
   }
 
@@ -1098,6 +1201,7 @@ function realDefensiveLevels(snapshot) {
       params: {
         duration: durationOf(level, 60),
         playerStats: { attackSpeed: level.playerAttackSpeed },
+        legacyDummy: true,
         enemies,
       },
     };
@@ -1149,13 +1253,13 @@ export function buildKitingDrills(champions, snapshot = null) {
   ];
 
   const fallbackDefensiveLevels = [
-    { duration: 45, enemies: [{ role: "melee", behaviour: "melee", damageScale: 0.35, speedScale: 0.78 }] },
-    { duration: 45, enemies: [{ role: "melee", behaviour: "melee", damageScale: 0.4, speedScale: 0.84 }, { role: "ranged", behaviour: "ranged", damageScale: 0.3 }] },
-    { duration: 50, enemies: [{ role: "melee", behaviour: "melee", damageScale: 0.45, speedScale: 0.88 }, { role: "ranged", behaviour: "ranged", damageScale: 0.35 }] },
-    { duration: 50, enemies: [{ role: "melee", behaviour: "melee", damageScale: 0.45, speedScale: 0.9 }, { role: "ranged", behaviour: "ranged", damageScale: 0.35 }, { role: "caster", behaviour: "caster", spell: "Q", damageScale: 0.3 }] },
-    { duration: 55, enemies: [{ role: "melee", behaviour: "melee", damageScale: 0.5, speedScale: 0.92 }, { role: "melee", seed: 1, behaviour: "melee", damageScale: 0.4, speedScale: 0.95 }, { role: "ranged", behaviour: "ranged", damageScale: 0.4 }] },
-    { duration: 55, enemies: [{ role: "melee", behaviour: "melee", damageScale: 0.5, speedScale: 0.94 }, { role: "ranged", behaviour: "ranged", damageScale: 0.4 }, { role: "caster", behaviour: "caster", spell: "Q", damageScale: 0.35 }] },
-    { duration: 60, enemies: [{ role: "melee", behaviour: "melee", damageScale: 0.55, speedScale: 0.95 }, { role: "melee", seed: 1, behaviour: "melee", damageScale: 0.45, speedScale: 1.0 }, { role: "ranged", behaviour: "ranged", damageScale: 0.45 }, { role: "caster", behaviour: "caster", spell: "Q", damageScale: 0.35 }] },
+    { duration: 45, legacyDummy: true, dummyMoveSpeed: 200, dummyHp: 300, dummyHitsToKill: 1, respawnDelay: 3 },
+    { duration: 45, legacyDummy: true, dummyMoveSpeed: 220, dummyHp: 350, dummyHitsToKill: 1, respawnDelay: 3 },
+    { duration: 50, legacyDummy: true, dummyMoveSpeed: 240, dummyHp: 400, dummyHitsToKill: 1, respawnDelay: 2.5 },
+    { duration: 50, legacyDummy: true, dummyMoveSpeed: 260, dummyHp: 450, dummyHitsToKill: 1, respawnDelay: 2.5 },
+    { duration: 55, legacyDummy: true, dummyMoveSpeed: 280, dummyHp: 500, dummyHitsToKill: 1, respawnDelay: 2 },
+    { duration: 55, legacyDummy: true, dummyMoveSpeed: 300, dummyHp: 550, dummyHitsToKill: 1, respawnDelay: 2 },
+    { duration: 60, legacyDummy: true, dummyMoveSpeed: 320, dummyHp: 600, dummyHitsToKill: 1, respawnDelay: 1.5 },
   ];
 
   const fallbackPeelLevels = [
