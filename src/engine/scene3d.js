@@ -9,6 +9,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { buildChampionModel, animateModel } from "./models.js";
 import { config, DEFAULTS } from "../config.js";
+import { CameraRig } from "./Camera.js";
 
 const GROUND_Y = 0;
 
@@ -80,13 +81,8 @@ export class Scene3D {
     this.scene.background = new THREE.Color(0x080c12);
     this.scene.fog = new THREE.Fog(0x080c12, 3200, 7200);
 
-    this.camera = new THREE.PerspectiveCamera(42, 1, 10, 9000);
-    this.cameraFocus = new THREE.Vector3(0, 0, 0);
-    this.zoom = 1;
-    this.cameraDistance = 850;
-    this.cameraHeight = 800;
-    this.cameraPitch = 30; // degrees
-    this.focusTarget = new THREE.Vector3(0, 0, 0);
+    // Câmera delegada ao módulo engine/Camera.js (CameraRig)
+    this.cameraRig = new CameraRig();
 
     const hemi = new THREE.HemisphereLight(0x8fb4e0, 0x1b2430, 0.85);
     this.scene.add(hemi);
@@ -145,17 +141,19 @@ export class Scene3D {
       this.attackMoveMesh.material.dispose();
       this.attackMoveMesh = null;
     }
-    this.cameraFocus.set(0, 0, 0);
-    this._freeCamReady = false;
+    this.cameraRig.reset();
   }
 
+  /** A câmera THREE.js viva, mantida pelo CameraRig. */
+  get camera() {
+    return this.cameraRig.threeCamera;
+  }
   resize() {
     const rect = this.container.getBoundingClientRect();
     const w = Math.max(320, Math.floor(rect.width));
     const h = Math.max(240, Math.floor(rect.height));
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this.cameraRig.setAspect(w / h);
     this.width = w;
     this.height = h;
   }
@@ -400,8 +398,9 @@ export class Scene3D {
 
     // Attack-move indicator (orange filled circle) - always follows player, visibility controlled by A key
     if (player && player.alive) {
+      const wantRange = player.attackRange || 550;
       if (!this.attackMoveMesh) {
-        const geo = new THREE.CircleGeometry(player.attackRange || 550, 64);
+        const geo = new THREE.CircleGeometry(wantRange, 64);
         const mat = new THREE.MeshBasicMaterial({
           color: 0xffb454,
           transparent: true,
@@ -413,6 +412,11 @@ export class Scene3D {
         this.attackMoveMesh.rotation.x = -Math.PI / 2;
         this.attackMoveMesh.position.y = 1.5;
         this.scene.add(this.attackMoveMesh);
+        this.attackMoveBaseRadius = wantRange;
+      }
+      // Atualiza tamanho dinamicamente quando attackRange muda (powerups de alcance/nerf)
+      if (this.attackMoveBaseRadius !== undefined && this.attackMoveBaseRadius > 0) {
+        this.attackMoveMesh.scale.setScalar(wantRange / this.attackMoveBaseRadius);
       }
       // Always follow player
       this.attackMoveMesh.position.set(player.x || 0, 1.5, player.y || 0);
@@ -635,7 +639,7 @@ export class Scene3D {
       if (!view) {
         const ringGeo = new THREE.RingGeometry(25, 35, 32);
         const mat = new THREE.MeshBasicMaterial({
-          color: pu.color,
+          color: pu.color || "#ffd27a",  // fallback caso color não esteja definido
           transparent: true,
           opacity: 0.6,
           side: THREE.DoubleSide,
@@ -648,7 +652,7 @@ export class Scene3D {
 
         const innerGeo = new THREE.RingGeometry(15, 22, 32);
         const innerMat = new THREE.MeshBasicMaterial({
-          color: pu.color,
+          color: pu.color || "#ffd27a",  // fallback caso color não esteja definido
           transparent: true,
           opacity: 0.9,
           side: THREE.DoubleSide,
@@ -729,13 +733,10 @@ export class Scene3D {
     this.dt = dt;
     this.worldTime = world.time;
 
-    // Consume zoom delta from input (mouse wheel)
+    // Consume zoom delta from input (mouse wheel) — delegado ao CameraRig
     const input = opts.input;
     if (input && typeof input.consumeZoomDelta === "function") {
-      const zoomDelta = input.consumeZoomDelta();
-      if (zoomDelta !== 0) {
-        this.zoom = Math.max(0.5, Math.min(1.5, this.zoom + zoomDelta));
-      }
+      this.cameraRig.applyZoom(input.consumeZoomDelta());
     }
 
     this.syncUnits(world);
@@ -746,21 +747,9 @@ export class Scene3D {
     this.syncPowerups(opts.powerups);
     this.setFocusTarget(opts.focusTarget);
 
-    let cameraLocked = opts.cameraLocked;
-    if (cameraLocked === undefined) cameraLocked = input ? input.cameraLocked !== false : true;
-    let snap = false;
-    let edgeScroll = null;
-    if (!cameraLocked && opts.player) {
-      // Holding Space pins the camera on the champion, even with a free camera.
-      const centering = input && typeof input.down === "function" && input.down("Space");
-      if (centering) {
-        cameraLocked = true;
-        snap = true;
-      } else if (input && typeof input.getEdgeScroll === "function") {
-        edgeScroll = input.getEdgeScroll();
-      }
-    }
-    this.updateCamera(opts.player, dt, edgeScroll, cameraLocked, snap);
+    // Política de câmera resolvida pelo módulo engine/Camera.js
+    const frame = this.cameraRig.resolveFrame(input, opts.cameraLocked, opts.player);
+    this.updateCamera(opts.player, dt, frame.edgeScroll, frame.cameraLocked, frame.snap);
 
     for (let i = this.markers.length - 1; i >= 0; i--) {
       const m = this.markers[i];
@@ -807,50 +796,17 @@ export class Scene3D {
   }
 
   updateCamera(player, dt, edgeScroll = null, cameraLocked = true, snap = false) {
-    if (!player || !this.camera || !this.cameraFocus) return;
-    const arena = this.arena || { x: 0, y: 0, w: 3200, h: 1900 };
-    const clampX = (x) => Math.max(arena.x + 120, Math.min(arena.x + arena.w - 120, x));
-    const clampZ = (z) => Math.max(arena.y + 120, Math.min(arena.y + arena.h - 120, z));
-
-    if (cameraLocked) {
-      this._freeCamReady = false;
-      this.focusTarget.set(clampX(player.x), 0, clampZ(player.y));
-      if (snap) this.cameraFocus.copy(this.focusTarget);
-      else this.cameraFocus.lerp(this.focusTarget, 1 - Math.pow(0.0015, dt));
-    } else {
-      // Unlocked camera: stays where the player left it instead of snapping back.
-      if (!this._freeCamReady) {
-        this.cameraFocus.set(clampX(player.x), 0, clampZ(player.y));
-        this._freeCamReady = true;
-      }
-      if (edgeScroll) {
-        const speed = 2200 * dt;
-        this.cameraFocus.x = clampX(this.cameraFocus.x + edgeScroll.x * speed);
-        this.cameraFocus.z = clampZ(this.cameraFocus.z + edgeScroll.y * speed);
-      }
-    }
-
-    const zoom = this.zoom || 1;
-    const distance = this.cameraDistance / zoom;
-
-    const pitchRad = THREE.MathUtils.degToRad(this.cameraPitch);
-    const height = distance * Math.tan(pitchRad);
-
-    this.camera.position.set(
-      this.cameraFocus.x,
-      height,
-      this.cameraFocus.z + distance,
-    );
-    this.camera.lookAt(this.cameraFocus.x, 0, this.cameraFocus.z);
+    this.cameraRig.update({
+      player,
+      dt,
+      edgeScroll,
+      cameraLocked,
+      snap,
+      arena: this.arena,
+    });
   }
 
   setCameraConfig({ zoom = 1, fov = 42, distance = 850, pitch = 30 } = {}) {
-    this.zoom = zoom > 0 ? zoom : 1;
-    this.cameraDistance = distance > 0 ? distance : 850;
-    this.cameraPitch = pitch > 0 ? pitch : 30;
-    if (this.camera.fov !== fov) {
-      this.camera.fov = fov;
-      this.camera.updateProjectionMatrix();
-    }
+    this.cameraRig.setConfig({ zoom, fov, distance, pitch });
   }
 }

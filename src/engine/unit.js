@@ -47,6 +47,7 @@ export class Unit {
     this.buffAttackSpeedTimer = 0;
     this.buffMoveSpeed = 1;
     this.buffMoveSpeedTimer = 0;
+    this.buffRangeTimer = 0;
     this.debuffAttackSpeed = 1;
     this.debuffAttackSpeedTimer = 0;
     this.debuffMoveSpeed = 1;
@@ -75,7 +76,8 @@ export class Unit {
     if (!this.canAttack() || !target || !target.alive) return false;
     this.pendingTarget = target;
     this.casting = this.attackCast;
-    this.attackTimer = this.attackPeriod;
+    // buffAttackSpeed > 1 reduz o tempo entre ataques (ataque mais rápido)
+    this.attackTimer = this.attackPeriod / (this.buffAttackSpeed || 1);
     this.pendingHit = false;
     return true;
   }
@@ -111,6 +113,22 @@ export class Unit {
         }
       }
     }
+    // Decai buffs temporários de power-up
+    if (this.buffAttackSpeedTimer > 0) {
+      this.buffAttackSpeedTimer = Math.max(0, this.buffAttackSpeedTimer - dt);
+      if (this.buffAttackSpeedTimer === 0) this.buffAttackSpeed = 1;
+    }
+    if (this.buffMoveSpeedTimer > 0) {
+      this.buffMoveSpeedTimer = Math.max(0, this.buffMoveSpeedTimer - dt);
+      if (this.buffMoveSpeedTimer === 0) this.buffMoveSpeed = 1;
+    }
+    if (this.buffRangeTimer > 0) {
+      this.buffRangeTimer = Math.max(0, this.buffRangeTimer - dt);
+      if (this.buffRangeTimer === 0 && this._baseAttackRange !== undefined) {
+        this.attackRange = this._baseAttackRange;
+        this._baseAttackRange = undefined;
+      }
+    }
     if (this.hitFlash > 0) this.hitFlash = Math.max(0, this.hitFlash - dt);
     return resolved;
   }
@@ -123,7 +141,7 @@ export class Unit {
     if (this.casting > 0) return false;
     const d = norm(tx - this.x, ty - this.y);
     if (d.x === 0 && d.y === 0) return false;
-    const speed = this.moveSpeed * speedScale;
+    const speed = this.moveSpeed * speedScale * (this.buffMoveSpeed || 1);
     const step = speed * dt;
     this.x += d.x * step;
     this.y += d.y * step;
@@ -136,7 +154,7 @@ export class Unit {
     if (this.casting > 0) return false;
     const d = norm(dx, dy);
     if (d.x === 0 && d.y === 0) return false;
-    const step = this.moveSpeed * speedScale * dt;
+    const step = this.moveSpeed * speedScale * (this.buffMoveSpeed || 1) * dt;
     this.x += d.x * step;
     this.y += d.y * step;
     this.facing = d;
@@ -149,12 +167,13 @@ export class Unit {
     if (d.x || d.y) this.facing = d;
   }
 
-  takeDamage(amount, now) {
+  takeDamage(amount, now, source) {
     if (now < (this.invulnerableUntil || 0)) return this.hp;
     if (!this.alive) return this.hp;
     this.hp = Math.max(0, this.hp - amount);
     this.hitFlash = 0.18;
     this.lastDamageAt = now;
+    this.lastDamageFrom = source;  // ← Track who dealt the damage
     if (this.hp <= 0) {
       this.alive = false;
     }

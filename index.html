@@ -60,7 +60,7 @@
             <li><kbd>Mouse</kbd> mirar</li>
             <li><kbd>Y</kbd> alternar câmera livre/travada</li>
             <li><kbd>Espaço</kbd> centralizar a câmera no campeão</li>
-            <li><kbd>Esc</kbd> sair do treino</li>
+            <li><kbd>Esc</kbd> pausar / continuar</li>
           </ul>
           <p class="hint">
             Movimentação igual ao League: <em>botão direito</em>. Para kitar, clique
@@ -83,74 +83,12 @@
 
   <!-- ══════════════════════ DRILL ══════════════════════ -->
   <section id="screen-drill" class="screen">
-    <div class="hud-backdrop"></div>
-    <div class="hud">
-      <div class="hud-left">
-        <button id="drill-exit" class="btn btn-ghost btn-sm" type="button">← Sair</button>
-        <div class="hud-title">
-          <strong id="hud-drill-name">—</strong>
-          <span id="hud-drill-level" class="tag">Nível 1</span>
-        </div>
-      </div>
-
-      <div class="hud-center">
-        <div class="hud-timer" id="hud-timer">0:00</div>
-        <div class="hud-score">Pontos <strong id="hud-score">0</strong></div>
-        <div class="hud-coach" id="hud-coach"></div>
-      </div>
-
-      <div class="hud-right">
-        <div class="stat-chips" id="hud-stats"></div>
-        <div class="hp-wrap" title="Sua vida">
-          <div class="hp-bar"><i id="hud-hp"></i></div>
-          <span id="hud-hp-text">0</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Champion portrait HUD -->
-    <div class="hud-portrait" id="hud-portrait">
-      <div class="portrait-frame">
-        <img class="portrait-img" id="hud-portrait-img" src="./assets/champions/Ahri.png" alt="Retrato" />
-        <svg class="portrait-arc" id="hud-portrait-arc" viewBox="0 0 64 64">
-          <circle cx="32" cy="32" r="30" fill="none" stroke="#922be8" stroke-width="4" stroke-linecap="round" stroke-dasharray="104.7 83.8" transform="rotate(-90 32 32)" />
-        </svg>
-        <div class="portrait-small-icon" id="hud-portrait-small-icon"></div>
-      </div>
-      <div class="portrait-level" id="hud-portrait-level">1</div>
-    </div>
-
-    <!-- Abilities HUD -->
-    <div class="hud-abilities" id="hud-abilities"></div>
-
-    <!-- Item panel HUD -->
-    <div class="hud-items" id="hud-items">
-      <div class="hud-items-grid" id="hud-items-grid">
-        <div class="hud-item-slot"></div>
-        <div class="hud-item-slot"></div>
-        <div class="hud-item-slot"></div>
-      </div>
-      <div class="hud-items-currency">
-        <span class="hud-items-currency-icon"></span>
-        <span class="hud-items-currency-value">0</span>
-      </div>
-    </div>
-
-    <!-- Attributes HUD -->
-    <div class="hud-attributes" id="hud-attributes"></div>
-
-    <div class="stage">
-      <div id="game-stage"></div>
-      <div id="drill-banner" class="banner"></div>
-      <div id="drill-hint" class="stage-hint"></div>
-      <button id="hud-status-toggle" class="hud-status-toggle" type="button" title="Recolher status">↔</button>
-      <div class="camera-mode" id="hud-camera-mode" data-state="locked" title="Y alterna câmera fixa/livre · segure Espaço para fixar no campeão">
-        <span class="camera-mode-dot"></span><span class="camera-mode-text">Câmera fixa</span>
-      </div>
-    </div>
+    <!-- Game stage - full screen -->
+    <div id="game-stage"></div>
+    <div id="drill-banner" class="banner"></div>
   </section>
 
-  <!-- ══════════════════════ RESULTS ══════════════════════ -->
+  <!-- ══════════════════════ RESULTS<!-- ══════════════════════ RESULTS ══════════════════════ -->
   <section id="screen-results" class="screen">
     <div class="results-card">
       <div class="results-head">
@@ -237,74 +175,27 @@
 
   <!-- ══════════════════════ ARENA GAME ══════════════════════ -->
   <section id="screen-arena" class="screen">
-    <div class="hud-backdrop" id="arena-hud-backdrop"></div>
-    <div class="hud">
-      <div class="hud-left">
-        <button id="arena-exit" class="btn btn-ghost btn-sm" type="button">← Sair</button>
-        <div class="hud-title">
-          <strong id="arena-hud-mode">Arena</strong>
-          <span id="arena-hud-timer" class="tag">0:00</span>
-        </div>
-      </div>
-
-      <div class="hud-center">
-        <div class="arena-score">
-          <span id="arena-p1-score" class="player-score">P1: 0</span>
-          <span id="arena-p2-score" class="player-score">P2: 0</span>
-        </div>
-      </div>
-
-      <div class="hud-right">
-        <div class="stat-chips" id="arena-hud-stats"></div>
-        <div class="hp-wrap" title="Sua vida">
-          <div class="hp-bar"><i id="arena-hud-hp"></i></div>
-          <span id="arena-hud-hp-text">0</span>
-        </div>
-      </div>
+    <!-- Placar de mortes visível no topo da arena -->
+    <div id="arena-kill-score" class="arena-kill-score">
+      <span class="score-label">Você</span>
+      <span id="arena-score-player" class="score-value">0</span>
+      <span class="score-separator">-</span>
+      <span id="arena-score-bot" class="score-value">0</span>
+      <span class="score-label">Bot</span>
+    </div>
+    <!-- Power-ups ativos do jogador -->
+    <div id="arena-active-powerups" class="arena-active-powerups"></div>
+    <!-- Arena exit button - specific to arena screen -->
+    <div class="drill-info-overlay" id="arena-info-overlay">
+      <button id="arena-exit" class="btn btn-ghost btn-sm" type="button">⏸ Pause</button>
     </div>
 
-    <!-- Champion portrait HUD -->
-    <div class="hud-portrait" id="arena-hud-portrait">
-      <div class="portrait-frame">
-        <img class="portrait-img" id="arena-hud-portrait-img" src="./assets/champions/Ahri.png" alt="Retrato" />
-        <svg class="portrait-arc" id="arena-hud-portrait-arc" viewBox="0 0 64 64">
-          <circle cx="32" cy="32" r="30" fill="none" stroke="#922be8" stroke-width="4" stroke-linecap="round" stroke-dasharray="104.7 83.8" transform="rotate(-90 32 32)" />
-        </svg>
-        <div class="portrait-small-icon" id="arena-hud-portrait-small-icon"></div>
-      </div>
-      <div class="portrait-level" id="arena-hud-portrait-level">1</div>
-    </div>
-
-    <div class="hud-abilities" id="arena-hud-abilities"></div>
-
-    <!-- Item panel HUD -->
-    <div class="hud-items" id="arena-hud-items">
-      <div class="hud-items-grid" id="arena-hud-items-grid">
-        <div class="hud-item-slot"></div>
-        <div class="hud-item-slot"></div>
-        <div class="hud-item-slot"></div>
-      </div>
-      <div class="hud-items-currency">
-        <span class="hud-items-currency-icon"></span>
-        <span class="hud-items-currency-value">0</span>
-      </div>
-    </div>
-    <div class="hud-powerups" id="arena-hud-powerups"></div>
-
-    <!-- Attributes HUD -->
-    <div class="hud-attributes" id="arena-hud-attributes"></div>
-
-    <div class="stage">
-      <div id="arena-game-stage"></div>
-      <div id="arena-banner" class="banner"></div>
-      <button id="hud-status-toggle" class="hud-status-toggle" type="button" title="Recolher status">↔</button>
-      <div class="camera-mode" id="arena-camera-mode" data-state="locked" title="Y alterna câmera fixa/livre · segure Espaço para fixar no campeão">
-        <span class="camera-mode-dot"></span><span class="camera-mode-text">Câmera fixa</span>
-      </div>
-    </div>
+    <!-- Game stage - full screen -->
+    <div id="arena-game-stage"></div>
+    <div id="arena-banner" class="banner"></div>
   </section>
 
-  <!-- ══════════════════════ ARENA RESULTS ══════════════════════ -->
+  <!-- ══════════════════════ ARENA RESULTS<!-- ══════════════════════ ARENA RESULTS ══════════════════════ -->
   <section id="screen-arena-results" class="screen">
     <div class="results-card">
       <div class="results-head">
@@ -392,7 +283,7 @@
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
-<script type="module" src="./src/main.js"></script>
+<script type="module" src="/src/main.js"></script>
 
   <!-- ══════════════════════ ARENA RESULT MODAL ══════════════════════ -->
   <div id="arena-result-modal" class="modal-overlay">
@@ -404,12 +295,120 @@
       <div class="modal-body">
         <div class="modal-score">0 x 0</div>
         <div class="modal-champions">—</div>
-        < <div class="modal-duration">—</div>
+        <div class="modal-duration">—</div>
       </div>
       <div class="modal-actions">
         <button class="modal-rematch btn btn-primary" type="button">Revanche</button>
         <button class="modal-menu btn btn-ghost" type="button">Menu</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Pause Menu Overlay (shared by drill and arena) -->
+  <div class="pause-overlay" id="pause-overlay">
+    <div class="pause-menu">
+      <div class="pause-header">
+        <h2>Pausado</h2>
+        <button id="pause-resume" class="btn btn-primary" type="button">Continuar (Esc)</button>
+      </div>
+      <div class="pause-content">
+        <div class="pause-hint" id="pause-hint"></div>
+        <div class="pause-controls">
+          <h3>Controles</h3>
+          <ul class="keys">
+            <li><kbd>Botão dir.</kbd>no chão: andar até o ponto</li>
+            <li><kbd>Botão dir.</kbd>no inimigo: atacar</li>
+            <li><kbd>A</kbd>+ clique: atacar e avançar</li>
+            <li><kbd>S</kbd>parar a ação</li>
+            <li><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd> habilidades</li>
+            <li><kbd>Mouse</kbd> mirar</li>
+            <li><kbd>Y</kbd> alternar câmera livre/travada</li>
+            <li><kbd>Espaço</kbd> centralizar a câmera no campeão</li>
+            <li><kbd>Esc</kbd> pausar / continuar</li>
+          </ul>
+        </div>
+      </div>
+      <div class="pause-actions">
+        <button id="pause-restart" class="btn btn-ghost" type="button">Reiniciar</button>
+        <button id="pause-menu" class="btn btn-danger" type="button">Sair para o Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ GLOBAL HUD (shared by drill and arena) ══════════════════════ -->
+  <div id="global-hud" class="global-hud">
+    <!-- Top-left: Drill info (name, level) - specific to drill screen -->
+    <div class="drill-info-overlay" id="drill-info-overlay-global">
+      <button id="drill-exit" class="btn btn-ghost btn-sm" type="button">← Sair</button>
+      <div class="drill-title">
+        <strong id="hud-drill-name">—</strong>
+        <span id="hud-drill-level" class="tag">Nível 1</span>
+      </div>
+    </div>
+
+    <!-- Top-center: Timer, Score, Coach -->
+    <div class="drill-center-overlay" id="drill-center-overlay">
+      <div class="timer-box">
+        <div class="hud-timer" id="hud-timer">0:00</div>
+      </div>
+      <div class="hud-score">Pontos <strong id="hud-score">0</strong></div>
+      <div class="hud-coach" id="hud-coach"></div>
+    </div>
+
+    <!-- Top-right: Stats chips and HP -->
+    <div class="drill-stats-overlay" id="drill-stats-overlay">
+      <div class="stat-chips" id="hud-stats"></div>
+      <div class="hp-wrap" title="Sua vida">
+        <div class="hp-bar"><i id="hud-hp"></i></div>
+        <span id="hud-hp-text">0</span>
+      </div>
+    </div>
+
+    <!-- Bottom HUD row: portrait (left) | abilities + bars (center) | items + coins (right) -->
+    <div class="bottom-hud" id="bottom-hud">
+      <!-- Champion portrait HUD (left) -->
+      <div class="portrait-container" id="portrait-container">
+        <div class="hud-portrait" id="hud-portrait">
+          <div class="portrait-frame">
+            <img class="portrait-img" id="hud-portrait-img" src="./assets/champions/Ahri.png" alt="Retrato" />
+            <svg class="portrait-arc" id="hud-portrait-arc" viewBox="0 0 64 64">
+              <circle cx="32" cy="32" r="30" fill="none" stroke="#922be8" stroke-width="4" stroke-linecap="round" stroke-dasharray="104.7 83.8" transform="rotate(-90 32 32)" />
+            </svg>
+            <div class="portrait-small-icon" id="hud-portrait-small-icon"></div>
+          </div>
+          <div class="portrait-level" id="hud-portrait-level">1</div>
+        </div>
+      </div>
+
+      <!-- Abilities + Health/Mana HUD (center) -->
+      <div class="abilities-container" id="abilities-container">
+        <div class="hud-abilities" id="hud-abilities"></div>
+      </div>
+
+      <!-- Item panel HUD (right) with container box -->
+      <div class="items-container" id="items-container">
+        <div class="hud-items" id="hud-items">
+          <div class="hud-items-grid" id="hud-items-grid">
+            <div class="hud-item-slot"></div>
+            <div class="hud-item-slot"></div>
+            <div class="hud-item-slot"></div>
+          </div>
+          <div class="hud-items-currency">
+            <span class="hud-items-currency-icon"></span>
+            <span class="hud-items-currency-value">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Attributes HUD (bottom right) -->
+    <div class="hud-attributes" id="hud-attributes">
+      <div class="attr-grid"></div>
+    </div>
+
+    <!-- Camera mode -->
+    <div class="camera-mode" id="hud-camera-mode" data-state="locked" title="Y alterna câmera fixa/livre · segure Espaço para fixar no campeão">
+      <span class="camera-mode-dot"></span><span class="camera-mode-text">Câmera fixa</span>
     </div>
   </div>
 

@@ -6,9 +6,12 @@ import { store } from "./store.js";
 import { orderLabel } from "./engine/orders.js";
 import { formatTime, makeRng } from "./core/math.js";
 import { config, applyChampionOverrides, applyDrillOverrides } from "./config.js";
-import { syncArena, ARENA } from "./drills/common.js";
+import { syncArena, ARENA } from "./engine/battlefield.js";
+import { buildVersusDrill } from "./drills/versus.js";
 import { createAdmin } from "./admin.js";
-import { ArenaMode, POWERUP_TYPES } from "./arena.js";
+import { gameState } from "./core/GameState.js";
+import { championRegistry } from "./champions/index.js";
+import { updateHud, updateCameraMode, banner } from "./ui/hud.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -26,7 +29,6 @@ const app = {
   loop: null,
   admin: null,
   config,
-  arenaSession: null,
   socket: null,
   onlineRoom: null,
   onlineOpponent: null,
@@ -35,6 +37,8 @@ const app = {
   onlineLobbyTimer: 0,
   adminAuthenticated: false,
 };
+
+// Objeto app no scope do módulo; sem window.app global.
 
 const SOCKET_URL = 'http://localhost:3002';
 const ADMIN_AUTH_KEY = 'kitingVersus-web.admin-auth';
@@ -199,13 +203,6 @@ function initSocket() {
 
   app.socket.on('disconnect', () => {
     app.onlineConnected = false;
-    if (app.onlineLobbyActive) {
-      showScreen('arena-setup');
-      app.onlineLobbyActive = false;
-    }
-    if (app.arenaSession) {
-      abortArena();
-    }
   });
 
   app.socket.on('room-created', ({ roomCode, role, champion }) => {
@@ -244,17 +241,6 @@ function initSocket() {
   app.socket.on('room-error', ({ message }) => {
     alert(message);
   });
-
-  app.socket.on('opponent-input', ({ role, input, timestamp }) => {
-    if (!app.arenaSession || !app.arenaSession.arena) return;
-    applyOpponentInput(role, input);
-  });
-
-  app.socket.on('opponent-disconnected', () => {
-    alert('Oponente desconectou');
-    abortArena();
-    showScreen('arena-setup');
-  });
 }
 
 function startLobbyCountdown() {
@@ -290,148 +276,167 @@ function updateLobbyUI() {
   }
 }
 
-function startOnlineMatch() {
-  app.onlineLobbyActive = false;
-  if (app.onlineLobbyTimerInterval) {
-    clearInterval(app.onlineLobbyTimerInterval);
+function startVersus(opts) {
+  const { isBot = true } = opts;
+  app.lastVersusSettings = opts;
+
+  let champion1;
+  let champion2;
+  if (isBot) {
+    champion1 = app.champions.find(c => c.alias === $("#arena-p1-champion").value) || app.champions[0];
+    champion2 = app.champions.find(c => c.alias === $("#arena-bot-champion").value) || app.champions[1];
+  } else {
+    champion1 = app.champions.find(c => c.alias === $("#arena-p1-champion").value) || app.champions[0];
+    champion2 = app.champions[1];
   }
 
-  const champion1 = app.champions.find(c => c.alias === $("#arena-p1-champion").value) || app.champions[0];
-  const champion2 = app.champions.find(c => c.alias === ($("#arena-bot-champion") ? $("#arena-bot-champion").value : app.champions[1]?.alias)) || app.champions[1];
-
+  const botDifficulty = $("#arena-bot-difficulty").value;
+  const powerupsEnabled = $("#arena-powerups-enabled").checked;
+  const abilitiesEnabled = $("#arena-abilities-enabled") ? $("#arena-abilities-enabled").checked : true;
   const rng = makeRng((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0);
-  const arenaStage = $("#arena-game-stage");
-  if (!app.arenaScene) {
-    app.arenaScene = new Scene3D(arenaStage);
-    app.arenaInput = new Input(app.arenaScene.renderer.domElement, {
-      toWorld: (x, y) => app.arenaScene.clientToGround(x, y),
-    }, config.combat().cameraLocked);
+
+  // DESTROY old scene/input if they exist (cleanup from previous mode)
+  // Remove old canvas/WebGL context para evitar acumulação de contexts (Chrome ~16 limit)
+  const container = $("#arena-game-stage");
+  const oldCanvas = container.querySelector("canvas");
+  if (oldCanvas) {
+    container.removeChild(oldCanvas);
+    // Clear all event listeners to break references
+    try { oldCanvas.onclick = null; } catch {}
+    try { oldCanvas.onmousedown = null; } catch {}
+    try { oldCanvas.onmousemove = null; } catch {}
+    try { oldCanvas.oncontextmenu = null; } catch {}
+    try { oldCanvas.onwheel = null; } catch {}
+    // Force WebGL context disposal
+    try { oldCanvas.getContext("webgl")?.dispose(); } catch {}
+    try { oldCanvas.getContext("webgl2")?.dispose(); } catch {}
+    // Null out the dom element completely
+    try { oldCanvas.parentNode.removeChild(oldCanvas); } catch {}
   }
-  const scene = app.arenaScene;
-  const input1 = app.arenaInput;
-  input1._cameraLocked = config.combat().cameraLocked;
+  // DESTROY old scene/input if they exist (cleanup from previous mode)
+  if (app.scene) {
+    try { app.scene.reset(); } catch {}
+    // If old scene had a destroy, remove its window listeners first
+    if (typeof app.scene.destroy === "function") app.scene.destroy();
+  }
+  if (app.input) {
+    app.input.destroy();
+    app.input = null;
+  }
+  const stage = $("#arena-game-stage");
+  app.scene = new Scene3D(stage);
+  // Ensure game stage is visible (may be hidden if coming from lobby)
+  stage.style.display = "block";
+  stage.style.visibility = "visible";
+  // Garantir que o canvas tenha dimensões corretas (100% do container)
+  const canvas = stage.querySelector("canvas");
+  if (canvas) {
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+    // Aplicar dimensões reais do container para o canvas
+    canvas.width = stage.clientWidth;
+    canvas.height = stage.clientHeight;
+  }
+  app.input = new Input(app.scene.renderer.domElement, {
+    toWorld: (x, y) => app.scene.clientToGround(x, y),
+  }, config.combat().cameraLocked);
+  // Reset cameraLocked to default for new game session
+  // Ensures each new Arena/Drill game starts with predictable camera state
+  config.patch("combat", { cameraLocked: true });
+  const scene = app.scene;
+  const input = app.input;
+  input._cameraLocked = config.combat().cameraLocked;
   scene.setCameraConfig({ ...config.camera(), pitch: config.combat().cameraPitch });
   scene.reset();
   scene.resize();
   scene.setArena(ARENA);
-  input1.reset();
+  input.reset();
 
-  const isBot = false;
-  const arena = new ArenaMode({
-    champion1,
-    champion2,
-    isBot,
-    botDifficulty: 'normal',
-    powerupsEnabled: $("#arena-powerups-enabled") ? $("#arena-powerups-enabled").checked : true,
-    abilitiesEnabled: $("#arena-abilities-enabled") ? $("#arena-abilities-enabled").checked : true,
+  const drill = buildVersusDrill(champion1, champion2, isBot, botDifficulty, powerupsEnabled, abilitiesEnabled, rng, app.champions);
+
+  const run = drill.create({
+    champion: champion1,
+    level: { index: 1, params: {} },
     rng,
-    onMoveMarker: (x, y, color) => scene.showMoveMarker(x, y, color),
+    champions: app.champions,
   });
-
-  arena.showBanner = function(text, tone) {
-    const el = $("#arena-banner");
-    el.textContent = text;
-    el.className = "banner is-on " + tone;
-    clearTimeout(arena.showBanner._timer);
-    arena.showBanner._timer = setTimeout(() => {
-      el.className = "banner " + tone;
-    }, 2000);
-  };
+  if ("onMoveMarker" in run) {
+    run.onMoveMarker = (x, y, color) => scene.showMoveMarker(x, y, color);
+  }
 
   const loop = new Loop(
-    function(dt) {
-      if (app.socket && app.socket.connected && app.onlineRoom && arena.player1) {
-        const player = arena.player1;
-        try {
-          app.socket.emit('player-input', {
-            roomCode: app.onlineRoom.roomCode,
-            role: app.onlineRoom.role,
-            input: {
-              x: player.x,
-              y: player.y,
-              orderKind: player.controller?.order?.kind || 'stop',
-              orderPoint: player.controller?.order?.point,
-              orderTarget: player.controller?.order?.target,
-              attackTimer: player.attackTimer,
-              casting: player.casting,
-            },
-            hp: player.hp,
-            maxHp: player.maxHp,
-            alive: player.alive,
-            timestamp: Date.now(),
-          });
-        } catch (e) {}
-      }
-
-      try {
-        arena.update(dt, input1, null);
-      } catch (e) {
-        console.error('arena update error', e, e.stack);
-      }
-
-      if (arena.finished && app.arenaSession && !app.arenaSession.ending) {
-        app.arenaSession.ending = true;
-        finishArena();
+    (dt) => {
+      try { run.update(dt, input); } catch (e) { console.error("versus update error", e, e.stack); }
+      if (run.finished && app.session && !app.session.ending) {
+        app.session.ending = true;
+        finishVersus(run);
       }
     },
-    function() {
+    () => {
       const now = performance.now();
       lastDelta = Math.min(0.1, (now - lastFrame) / 1000);
       lastFrame = now;
       const combat = config.combat();
+      try { run.render(scene, { showRanges: combat.showRanges, dt: lastDelta, attackMoveActive: input.attackMoveActive, input }); } catch (e) { console.error("versus render error", e, e.stack); }
+      updateCameraMode("drill", input);
+      updateHud(run);
+      // Placar de mortes visível da arena
       try {
-        arena.render(scene, {
-          showRanges: true,
-          dt: lastDelta,
-          attackMoveActive: input1.attackMoveActive,
-          input: input1,
-          focusTarget: arena.player1?.controller?.target,
-          powerups: arena.powerups,
-        });
-        updateCameraMode("arena", input1);
-        updateArenaHud(arena, input1);
-        $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
-        input1.endFrame();
-      } catch (e) {
-        console.error('arena render error', e, e.stack);
-      }
+        const pEl = $("#arena-score-player");
+        const bEl = $("#arena-score-bot");
+        if (pEl && bEl) {
+          pEl.textContent = String(run.playerKills ?? 0);
+          bEl.textContent = String(run.botKills ?? 0);
+        }
+      } catch {}
+      // Painel de power-ups ativos do jogador
+      try {
+        const puContainer = $("#arena-active-powerups");
+        if (puContainer) {
+          const chips = [];
+          const p = run.player;
+          if (p && p.buffAttackSpeedTimer > 0) {
+            chips.push(`<div class="powerup-chip"><span class="powerup-icon">⚡</span><span class="powerup-name">Vel. Ataque</span><span class="powerup-timer">${Math.ceil(p.buffAttackSpeedTimer)}s</span></div>`);
+          }
+          if (p && p.buffMoveSpeedTimer > 0) {
+            chips.push(`<div class="powerup-chip"><span class="powerup-icon">👟</span><span class="powerup-name">Vel. Mov.</span><span class="powerup-timer">${Math.ceil(p.buffMoveSpeedTimer)}s</span></div>`);
+          }
+          if (p && p.buffRangeTimer > 0) {
+            chips.push(`<div class="powerup-chip"><span class="powerup-icon">🎯</span><span class="powerup-name">Alcance</span><span class="powerup-timer">${Math.ceil(p.buffRangeTimer)}s</span></div>`);
+          }
+          puContainer.innerHTML = chips.length ? chips.join("") : "";
+        }
+      } catch {}
+      $("#arena-game-stage").classList.toggle("is-attackmove", input.attackMoveActive);
+      input.endFrame();
     }
   );
 
-  app.arenaSession = { arena, scene, input1, input2: null, loop, ending: false };
+  app.session = { drill, level: { index: 1 }, run, scene, input, loop, ending: false, startedAt: performance.now() };
+  app.sessionPaused = false;
+  $("#pause-overlay").classList.remove("visible");
+  gameState.session = app.session;
   lastFrame = performance.now();
-  renderAbilitiesHud(arena.player1, "#arena-hud-abilities");
-  showScreen("arena");
+
+  showScreen("arena");  // ← ADICIONADO: Ativa a screen do arena
+  document.body.classList.add("arena-mode");
+
+  const exitBtn = $("#arena-exit");
+  if (exitBtn) exitBtn.textContent = "⏸ Pause";
+
+  $("#hud-drill-name").textContent = "Versus — Bot";
+  $("#hud-drill-level").textContent = "1 vs 1";
+  $("#global-hud").style.display = "block";
+  // Esconder o botão "Sair" do HUD global na arena — a arena usa seu próprio Pause
+  const drillExitOverlay = $("#drill-info-overlay-global");
+  if (drillExitOverlay) drillExitOverlay.style.display = "none";
+  updateHud(run);
+
   requestAnimationFrame(() => {
     scene.resize();
     scene.setArena(ARENA);
     loop.start();
   });
-}
-
-function applyOpponentInput(role, input) {
-  if (!app.arenaSession || !app.arenaSession.arena) return;
-  const arena = app.arenaSession.arena;
-  const opponent = role === 'p1' ? arena.player2 : arena.player1;
-  if (!opponent || !opponent.alive) return;
-
-  opponent.x = input.x;
-  opponent.y = input.y;
-  opponent.hp = input.hp;
-  opponent.alive = input.alive;
-
-  if (input.orderKind === 'move' && input.orderPoint) {
-    opponent.controller.moveTo(input.orderPoint.x, input.orderPoint.y);
-  } else if (input.orderKind === 'attack' && input.orderTarget) {
-    opponent.controller.order = { kind: 'attack', target: opponent };
-  } else if (input.orderKind === 'attackMove' && input.orderPoint) {
-    opponent.controller.attackMoveTo(input.orderPoint.x, input.orderPoint.y);
-  } else if (input.orderKind === 'stop') {
-    opponent.controller.stop();
-  }
-
-  opponent.attackTimer = input.attackTimer;
-  opponent.casting = input.casting;
 }
 
 async function boot() {
@@ -450,6 +455,17 @@ async function boot() {
   syncArena();
   rebuildDrills();
   window.__trainer = app;
+
+  // Registra os campeões reais (com overrides aplicados) no ChampionRegistry.
+  for (const champion of app.champions) {
+    if (!championRegistry.has(champion.alias)) championRegistry.register(champion);
+  }
+  gameState.champions = app.champions;
+  gameState.rawChampions = app.rawChampions;
+  gameState.kitingVersus = app.kitingVersus;
+  gameState.drills = app.drills;
+  gameState.byId = app.byId;
+  gameState.config = config;
 
   buildChampionSelect();
   renderMenu();
@@ -475,19 +491,13 @@ function applyConfig() {
   renderMenu();
 }
 
-function showScreen(id) {
+export function showScreen(id) {
   document.querySelectorAll(".screen").forEach((s) => s.classList.remove("is-active"));
   $(`#screen-${id}`).classList.add("is-active");
-}
-
-function banner(text, tone = "") {
-  const el = $("#drill-banner");
-  el.textContent = text;
-  el.className = `banner is-on ${tone}`;
-  clearTimeout(banner._timer);
-  banner._timer = setTimeout(() => {
-    el.className = `banner ${tone}`;
-  }, 2200);
+  // Hide global HUD when leaving drill/arena screens
+  if (id === "menu" || id === "arena-lobby" || id === "arena-setup" || id === "stats" || id === "admin-login" || id === "admin") {
+    $("#global-hud").style.display = "none";
+  }
 }
 
 function buildChampionSelect() {
@@ -514,7 +524,7 @@ function championByAlias(alias) {
   return app.champions.find((c) => c.alias === alias) || app.champions[0];
 }
 
-function renderMenu() {
+export function renderMenu() {
   const list = $("#drill-list");
   list.innerHTML = "";
 
@@ -649,13 +659,45 @@ function startDrill(drill, level) {
     return;
   }
 
-  const stage = $("#game-stage");
-  if (!app.scene) {
-    app.scene = new Scene3D(stage);
-    app.input = new Input(app.scene.renderer.domElement, {
-      toWorld: (x, y) => app.scene.clientToGround(x, y),
-    }, config.combat().cameraLocked);
+  // Show screen FIRST so container has dimensions
+  showScreen("drill");
+
+  // DESTROY old scene/input if they exist (cleanup from previous mode)
+  // Remove old canvas/WebGL context para evitar acumulação de contexts (Chrome ~16 limit)
+  const container = $("#game-stage");
+  const oldCanvas = container.querySelector("canvas");
+  if (oldCanvas) {
+    container.removeChild(oldCanvas);
+    // Clear all event listeners to break references
+    try { oldCanvas.onclick = null; } catch {}
+    try { oldCanvas.onmousedown = null; } catch {}
+    try { oldCanvas.onmousemove = null; } catch {}
+    try { oldCanvas.oncontextmenu = null; } catch {}
+    try { oldCanvas.onwheel = null; } catch {}
+    // Force WebGL context disposal
+    try { oldCanvas.getContext("webgl")?.dispose(); } catch {}
+    try { oldCanvas.getContext("webgl2")?.dispose(); } catch {}
+    // Null out the dom element completely
+    try { container.removeChild(oldCanvas); } catch {}
   }
+  // DESTROY old scene/input if they exist (cleanup from previous mode)
+  if (app.scene) {
+    try { app.scene.reset(); } catch {}
+    // If old scene had a destroy, remove its window listeners first
+    if (typeof app.scene.destroy === "function") app.scene.destroy();
+  }
+  if (app.input) {
+    app.input.destroy();
+    app.input = null;
+  }
+
+  const stage = $("#game-stage");
+  app.scene = new Scene3D(stage);
+  app.input = new Input(app.scene.renderer.domElement, {
+    toWorld: (x, y) => app.scene.clientToGround(x, y),
+  }, config.combat().cameraLocked);
+  // Reset cameraLocked to default for new game session
+  config.patch("combat", { cameraLocked: true });
   const scene = app.scene;
   const input = app.input;
   input._cameraLocked = config.combat().cameraLocked;
@@ -690,14 +732,18 @@ function startDrill(drill, level) {
   );
 
   app.session = { drill, level, run, scene, input, loop, ending: false, startedAt: performance.now() };
+  app.sessionPaused = false;
+  $("#pause-overlay").classList.remove("visible");
+  gameState.session = app.session;
   lastFrame = performance.now();
 
   $("#hud-drill-name").textContent = drill.name;
   $("#hud-drill-level").textContent = `Nível ${level.index}`;
-  $("#drill-hint").textContent = hintFor(drill);
+  const hintEl = $("#drill-hint");
+  if (hintEl) hintEl.textContent = hintFor(drill);
+  $("#global-hud").style.display = "block";
   updateHud(run);
 
-  showScreen("drill");
   requestAnimationFrame(() => {
     scene.resize();
     scene.setArena(run.world.arena);
@@ -709,159 +755,52 @@ function hintFor(drill) {
   return drill.hint || "WASD para mover, clique para atacar, botão direito para andar até o ponto.";
 }
 
-function updateChampionPortrait(player, ids) {
-  const img = document.getElementById(ids.img);
-  const levelEl = document.getElementById(ids.level);
-  const arcEl = document.getElementById(ids.arc);
-  const smallIconEl = document.getElementById(ids.smallIcon);
-  const alias = (player && (player.alias || (player.data && player.data.alias))) || "Ahri";
-  const level = (player && player.level) || 1;
-  const progress = (player && player.portraitProgress) || 0;
-
-  if (img) img.src = "./assets/champions/" + encodeURIComponent(alias) + ".png";
-  if (levelEl) levelEl.textContent = String(level);
-
-  if (arcEl) {
-    const r = 30;
-    const C = 2 * Math.PI * r;
-    const len = C * Math.max(0, Math.min(1, progress));
-    arcEl.style.strokeDasharray = len + " " + (C - len);
-  }
-
-  if (smallIconEl) {
-    smallIconEl.innerHTML = '<svg viewBox="0 0 24 24"><path d="M13 2 L4 14 h6 l-1 8 9-12 h-6 z" fill="#4ea1ff"/></svg>';
-  }
-}
-
-function updateHudBars(player, containerSelector) {
-  const container = $(containerSelector);
-  if (!container) return;
-  const fills = container.querySelectorAll(".hud-bar-fill");
-  const texts = container.querySelectorAll(".hud-bar-text");
-  if (!fills.length) return;
-  const hpMax = player.maxHp || 1;
-  const hpPct = Math.max(0, Math.min(1, (player.hp ?? 0) / hpMax));
-  const resMax = player.resourceMax || player.maxHp * 0.3;
-  const resCur = player.resourceCur ?? resMax * 0.5;
-  const resPct = Math.max(0, Math.min(1, resMax > 0 ? resCur / resMax : 0));
-  fills[0].style.width = (hpPct * 100).toFixed(1) + "%";
-  texts[0].textContent = String(Math.round(player.hp ?? 0));
-  fills[1].style.width = (resPct * 100).toFixed(1) + "%";
-  texts[1].textContent = String(Math.round(resCur));
-}
-
-const cameraModeEls = { drill: null, arena: null };
-function updateCameraMode(which, input) {
-  if (!input) return;
-  if (!cameraModeEls[which]) {
-    cameraModeEls[which] = document.getElementById(which === "arena" ? "arena-camera-mode" : "hud-camera-mode");
-  }
-  const el = cameraModeEls[which];
-  if (!el) return;
-  const free = !input.cameraLocked;
-  const centering = free && typeof input.down === "function" && input.down("Space");
-  const state = !free ? "locked" : centering ? "centering" : "free";
-  if (el.dataset.state === state) return;
-  el.dataset.state = state;
-  const text = el.querySelector(".camera-mode-text");
-  if (text) text.textContent = !free ? "Câmera fixa" : centering ? "Câmera no campeão" : "Câmera livre";
-}
-
-function updateHud(run) {
-  const hpPct = Math.max(0, Math.min(1, run.player.hp / run.player.maxHp));
-  const hpBar = $("#hud-hp");
-  
-  if (!updateHud._abilitiesInited) {
-    renderAbilitiesHud(run.player, "#hud-abilities");
-    renderAttributesHud(run.player, "#hud-attributes");
-    updateHud._abilitiesInited = true;
-  }
-  updateAbilitiesCooldowns(run.player, "#hud-abilities");
-  updateHudBars(run.player, "#hud-abilities");
-  updateChampionPortrait(run.player, { img: "hud-portrait-img", level: "hud-portrait-level", arc: "hud-portrait-arc", smallIcon: "hud-portrait-small-icon" });
-  updateAttributesHud(run.player, "#hud-attributes");
-  hpBar.style.width = `${hpPct * 100}%`;
-  hpBar.parentElement.classList.toggle("low", hpPct < 0.35);
-  $("#hud-hp-text").textContent = `${Math.round(run.player.hp)}`;
-
-  if (run.ready > 0) {
-    const left = Math.ceil(run.ready);
-    const label = left > 1 ? String(left) : "Já!";
-    if (updateHud._lastReady !== left) {
-      updateHud._lastReady = left;
-      banner(label, "");
-    }
-    const readyTimeText = formatTime(run.duration);
-    if (updateHud._lastTimerText !== readyTimeText) {
-      updateHud._lastTimerText = readyTimeText;
-      $("#hud-timer").textContent = readyTimeText;
-    }
-    if (updateHud._lastScore !== "—") {
-      updateHud._lastScore = "—";
-      $("#hud-score").textContent = "—";
-    }
-    return;
-  }
-  if (updateHud._lastReady !== undefined) {
-    updateHud._lastReady = undefined;
-    banner("Comece!", "good");
-  }
-
-  const timeLeftText = formatTime(run.timeLeft);
-  if (updateHud._lastTimerText !== timeLeftText) {
-    updateHud._lastTimerText = timeLeftText;
-    $("#hud-timer").textContent = timeLeftText;
-  }
-  $("#hud-timer").classList.toggle("is-low", run.timeLeft <= 10 && run.timeLeft > 0);
-
-  const result = run.result();
-  const scoreText = String(result.score);
-  if (updateHud._lastScore !== scoreText) {
-    updateHud._lastScore = scoreText;
-    $("#hud-score").textContent = scoreText;
-  }
-
-  const chips = run.hud();
-  if (run.player.controller) {
-    chips.unshift({ label: "Ordem", value: orderLabel(run.player.controller) });
-  }
-  const statsHtml = chips
-    .map((c) => `<span class="stat-chip ${c.tone || ""}">${c.label}<b>${c.value}</b></span>`)
-    .join("");
-  if (updateHud._lastStatsHtml !== statsHtml) {
-    updateHud._lastStatsHtml = statsHtml;
-    $("#hud-stats").innerHTML = statsHtml;
-  }
-
-  const coach = run.coach ? run.coach() : "";
-  if (updateHud._lastCoach !== coach) {
-    updateHud._lastCoach = coach;
-    const coachEl = $("#hud-coach");
-    coachEl.textContent = coach;
-    coachEl.classList.toggle("is-alert", /incoming|Recue|Clique/.test(coach));
-  }
-}
-
 function finishDrill() {
-  const { drill, level, run, loop } = app.session;
-  loop.stop();
-  app.session = null;
-  const result = run.result();
-  result.stats.duration = run.duration;
-  const outcome = store.recordResult(drill.id, level.index, result.score, result.stats, drill.unlockScore);
+  if (!app.session) return;
+  if (app.session.input) app.session.input.destroy();
+  app.session.loop.stop();
+  // Clean up scene/input
+  if (app.scene) {
+    try { app.scene.reset(); } catch {}
+    app.scene = null;
+  }
+  if (app.input) {
+    app.input = null;
+  }
+  const result = app.session.run.result();
+  result.stats.duration = app.session.run.duration;
+  const session = app.session;
+  const outcome = store.recordResult(session.drill.id, session.level.index, result.score, result.stats, session.drill.unlockScore);
 
-  showResults(drill, level, result, outcome);
+  app.session = null;
+  gameState.session = null;
+  $("#global-hud").style.display = "none";
+
+  showResults(session.drill, session.level, result, outcome);
 }
 
 function abortDrill() {
   if (!app.session) return;
+  if (app.session.input) app.session.input.destroy();
   app.session.loop.stop();
+  app.sessionPaused = false;
+  // Clean up scene/input
+  if (app.scene) {
+    try { app.scene.reset(); } catch {}
+    app.scene = null;
+  }
+  if (app.input) {
+    app.input = null;
+  }
   app.session = null;
+  gameState.session = null;
+  $("#pause-overlay").classList.remove("visible");
+  $("#global-hud").style.display = "none";
   renderMenu();
   showScreen("menu");
 }
 
-function showResults(drill, level, result, outcome) {
+export function showResults(drill, level, result, outcome) {
   $("#results-drill").textContent = `${drill.name} — nível ${level.index}`;
   $("#results-score").textContent = result.score;
   $("#results-verdict").textContent = result.verdict;
@@ -1099,29 +1038,75 @@ function bindGlobalEvents() {
     });
   }
 
+  // Pause-resume button
+  const pauseResumeBtn = $("#pause-resume");
+  if (pauseResumeBtn) {
+    pauseResumeBtn.addEventListener("click", () => {
+      if (app.session && !app.sessionPaused) {
+        app.session.loop.stop();
+        app.sessionPaused = true;
+        $("#pause-overlay").classList.add("visible");
+      } else if (app.sessionPaused) {
+        app.session.loop.start();
+        app.sessionPaused = false;
+        $("#pause-overlay").classList.remove("visible");
+      }
+    });
+  }
+
+  // Pause-restart button
+  const pauseRestartBtn = $("#pause-restart");
+  if (pauseRestartBtn) {
+    pauseRestartBtn.addEventListener("click", () => {
+      if (app.session) {
+        abortDrill();
+        startDrill(app.session.drill, app.session.level);
+      }
+    });
+  }
+
+  // Pause-menu button
+  const pauseMenuBtn = $("#pause-menu");
+  if (pauseMenuBtn) {
+    pauseMenuBtn.addEventListener("click", () => {
+      if (app.session) {
+        abortDrill();
+        renderMenu();
+        showScreen("menu");
+      }
+    });
+  }
+
+  // Pause state per session
+  app.sessionPaused = false;
+
   window.addEventListener("keydown", (e) => {
-    if (e.code === "Escape" && app.session) {
-      abortDrill();
+    if (e.code !== "Escape") return;
+
+    const isDrillSession = !!app.session && !app.sessionPaused;
+
+    if (isDrillSession) {
+      app.session.loop.stop();
+      app.sessionPaused = true;
+      $("#pause-overlay").classList.add("visible");
+    } else if (app.sessionPaused) {
+      app.session.loop.start();
+      app.sessionPaused = false;
+      $("#pause-overlay").classList.remove("visible");
     }
   });
 
   document.addEventListener("contextmenu", (e) => {
-    if (app.session || app.arenaSession) e.preventDefault();
+    if (app.session) e.preventDefault();
   }, true);
   document.addEventListener("mousedown", (e) => {
-    if ((app.session || app.arenaSession) && e.button === 2) e.preventDefault();
+    if (app.session && e.button === 2) e.preventDefault();
   }, true);
 
   window.addEventListener("resize", () => {
     if (app.session) {
       app.session.scene.resize();
       app.session.scene.setArena(app.session.run.world.arena);
-    }
-    if (app.arenaSession) {
-      app.arenaSession.scene.resize();
-      if (app.arenaSession.arena && app.arenaSession.arena.run) {
-        app.arenaSession.scene.setArena(app.arenaSession.arena.run.world.arena);
-      }
     }
   });
 }
@@ -1140,21 +1125,38 @@ function bindArenaEvents() {
   if (diffSel) diffSel.addEventListener("change", () => {});
   
   const startBotBtn = $("#arena-start-bot");
-  if (startBotBtn) startBotBtn.addEventListener("click", () => startArena({ isBot: true, mode: 'bot' }));
+  if (startBotBtn) startBotBtn.addEventListener("click", () => startVersus({ isBot: true, mode: 'bot' }));
   
   const startOnlineBtn = $("#arena-start-online");
   if (startOnlineBtn) startOnlineBtn.addEventListener("click", () => {
-    app.socket.emit('find-match', { champion: $("#arena-p1-champion").value });
+    // Online removed; start local versus instead.
+    startVersus({ isBot: true, mode: 'bot' });
   });
   
   const exitBtn = $("#arena-exit");
-  if (exitBtn) exitBtn.addEventListener("click", abortArena);
+  if (exitBtn) {
+    exitBtn.addEventListener("click", () => {
+      if (app.sessionPaused) {
+        // Resume game
+        app.sessionPaused = false;
+        exitBtn.textContent = "⏸ Pause";
+        $("#pause-overlay").classList.remove("visible");
+        if (app.session.loop) app.session.loop.start();
+      } else {
+        // Pause game
+        app.sessionPaused = true;
+        exitBtn.textContent = "▶ Continuar";
+        $("#pause-overlay").classList.add("visible");
+        if (app.session.loop) app.session.loop.stop();
+      }
+    });
+  }
   
   const rematchBtn = $("#arena-result-modal .modal-rematch");
   if (rematchBtn) rematchBtn.addEventListener("click", () => {
     hideArenaResultModal();
-    const lastSettings = app.lastArenaSettings || { isBot: true };
-    startArena(lastSettings);
+    const lastSettings = app.lastVersusSettings || { isBot: true };
+    startVersus(lastSettings);
   });
   
   const menuBtn = $("#arena-result-modal .modal-menu");
@@ -1163,6 +1165,26 @@ function bindArenaEvents() {
     renderMenu();
     showScreen("menu");
   });
+
+  // Botões da tela de resultados da arena (screen-arena-results)
+  const arenaResultsRematch = $("#arena-results-rematch");
+  if (arenaResultsRematch) {
+    arenaResultsRematch.addEventListener("click", () => {
+      const lastSettings = app.lastVersusSettings || { isBot: true };
+      renderMenu();
+      showScreen("menu");
+      startVersus(lastSettings);
+    });
+  }
+  const arenaResultsMenu = $("#arena-results-menu");
+  if (arenaResultsMenu) {
+    arenaResultsMenu.addEventListener("click", () => {
+      renderMenu();
+      showScreen("menu");
+      const drillExitOverlay = $("#drill-info-overlay-global");
+      if (drillExitOverlay) drillExitOverlay.style.display = "";
+    });
+  }
 }
 
 function renderArenaSetup() {
@@ -1190,165 +1212,113 @@ function renderArenaSetup() {
 }
 
 function startArena(opts) {
-  const { isBot, mode = 'bot' } = opts;
-  app.lastArenaSettings = opts;
-  
-  if (mode === 'online') {
-    startOnlineLobby(opts);
-    return;
+  startVersus(opts);
+}
+
+function finishVersus(run) {
+  if (!app.session) return;
+  if (app.session.input) app.session.input.destroy();
+  const { loop } = app.session;
+  try { loop.stop(); } catch {}
+  // Clean up scene/input
+  if (app.scene) {
+    try { app.scene.reset(); } catch {}
+    app.scene = null;
   }
-  
-  const champion1 = app.champions.find(c => c.alias === $("#arena-p1-champion").value) || app.champions[0];
-  let champion2;
-  if (isBot) {
-    champion2 = app.champions.find(c => c.alias === $("#arena-bot-champion").value) || app.champions[1];
-  } else {
-    champion2 = app.champions[1];
+  if (app.input) {
+    app.input = null;
   }
-  
-  const botDifficulty = $("#arena-bot-difficulty").value;
-  const powerupsEnabled = $("#arena-powerups-enabled").checked;
-  const rng = makeRng((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0);
-  
-  const arenaStage = $("#arena-game-stage");
-  if (!app.arenaScene) {
-    app.arenaScene = new Scene3D(arenaStage);
-    app.arenaInput = new Input(app.arenaScene.renderer.domElement, {
-      toWorld: (x, y) => app.arenaScene.clientToGround(x, y),
-    }, config.combat().cameraLocked);
+  app.session = null;
+  gameState.session = null;
+  $("#global-hud").style.display = "none";
+  document.body.classList.remove("arena-mode");
+  // Mostrar tela de resultados da arena em vez de ir direto para o menu
+  showArenaResults(run);
+}
+
+function showArenaResults(run) {
+  const result = run.result();
+  const scoreEl = $("#arena-results-score");
+  const verdictEl = $("#arena-results-verdict");
+  const medalEl = $("#arena-results-medal");
+  const detailsEl = $("#arena-results-details");
+
+  if (scoreEl) scoreEl.textContent = `${result.stats.playerKills ?? 0} x ${result.stats.botKills ?? 0}`;
+  if (verdictEl) verdictEl.textContent = result.verdict;
+  if (medalEl) medalEl.textContent = result.stats.playerKills >= result.stats.botKills ? "🏆" : "💀";
+
+  if (detailsEl) {
+    detailsEl.innerHTML = result.breakdown
+      .map(
+        (b) => `
+      <div class="bd-row">
+        <span class="bd-name">${b.name} <small style="opacity:.7">${b.detail || ""}</small></span>
+        <span class="bd-val">${b.display}</span>
+      </div>
+    `,
+      )
+      .join("");
   }
-  const scene = app.arenaScene;
-  const input1 = app.arenaInput;
-  input1._cameraLocked = config.combat().cameraLocked;
-  scene.setCameraConfig({ ...config.camera(), pitch: config.combat().cameraPitch });
-  scene.reset();
-  scene.resize();
-  scene.setArena(ARENA);
-  input1.reset();
-  
-  const arena = new ArenaMode({
-    champion1,
-    champion2,
-    isBot,
-    botDifficulty,
-    powerupsEnabled,
-    abilitiesEnabled: $("#arena-abilities-enabled") ? $("#arena-abilities-enabled").checked : true,
-    rng,
-    onMoveMarker: (x, y, color) => scene.showMoveMarker(x, y, color),
-  });
-  
-  arena.showBanner = function(text, tone) {
-    const el = $("#arena-banner");
-    el.textContent = text;
-    el.className = "banner is-on " + tone;
-    clearTimeout(arena.showBanner._timer);
-    arena.showBanner._timer = setTimeout(() => {
-      el.className = "banner " + tone;
-    }, 2000);
-  };
-  
-  if (!document.getElementById("arena-hud-powerups")) {
-    const hudAbilities = $("#arena-hud-abilities");
-    if (hudAbilities) {
-      const powerupHud = document.createElement("div");
-      powerupHud.className = "hud-powerups";
-      powerupHud.id = "arena-hud-powerups";
-      hudAbilities.parentNode.insertBefore(powerupHud, hudAbilities.nextSibling);
-    }
+
+  renderMenu();
+  showScreen("arena-results");
+}
+
+function abortVersus() {
+  if (!app.session) return;
+  if (app.session.input) app.session.input.destroy();
+  app.session.loop.stop();
+  app.sessionPaused = false;
+  // Clean up scene/input
+  if (app.scene) {
+    try { app.scene.reset(); } catch {}
+    app.scene = null;
   }
-  
-  const loop = new Loop(
-    function(dt) {
-      if (app.socket && app.socket.connected && app.onlineRoom && !isBot && arena.player1) {
-        const player = arena.player1;
-        try {
-          app.socket.emit('player-input', {
-            roomCode: app.onlineRoom.roomCode,
-            role: app.onlineRoom.role,
-            input: {
-              x: player.x,
-              y: player.y,
-              orderKind: player.controller?.order?.kind || 'stop',
-              orderPoint: player.controller?.order?.point,
-              orderTarget: player.controller?.order?.target ? 'unit' : null,
-              attackTimer: player.attackTimer,
-              casting: player.casting,
-            },
-            hp: player.hp,
-            maxHp: player.maxHp,
-            alive: player.alive,
-            timestamp: Date.now(),
-          });
-        } catch (e) {}
-      }
-      
-      try {
-        arena.update(dt, input1, null);
-      } catch (e) {
-        console.error('arena update error', e, e.stack);
-      }
-      
-      if (arena.finished && app.arenaSession && !app.arenaSession.ending) {
-        app.arenaSession.ending = true;
-        finishArena();
-      }
-    },
-    function() {
-      const now = performance.now();
-      lastDelta = Math.min(0.1, (now - lastFrame) / 1000);
-      lastFrame = now;
-      const combat = config.combat();
-      
-      try {
-        const attackMoveActive = input1.attackMoveActive;
-        const showRanges = combat.showRanges !== false;
-        if (attackMoveActive !== this._lastAttackMoveActive) {
-          console.log('[main] attackMoveActive changed:', attackMoveActive, 'keysA:', input1.keys?.has('KeyA'));
-          this._lastAttackMoveActive = attackMoveActive;
-        }
-        arena.render(scene, { 
-          showRanges: showRanges, 
-          dt: lastDelta, 
-          attackMoveActive,
-          input: input1,
-          focusTarget: arena.player1?.controller?.target,
-          powerups: arena.powerups,
-          opponent: app.onlineOpponent,
-        });
-        updateCameraMode("arena", input1);
-        updateArenaHud(arena, input1);
-        $("#arena-game-stage").classList.toggle("is-attackmove", input1.attackMoveActive);
-        input1.endFrame();
-      } catch (e) {
-        console.error('arena render error', e, e.stack);
-      }
-    }
-  );
-  
-  app.arenaSession = { arena, scene, input1, input2: null, loop, ending: false };
-  lastFrame = performance.now();
-  
-  const abilHud = document.getElementById("arena-hud-abilities");
-  if (abilHud) {
-    if (arena.abilitiesEnabled) {
-      renderAbilitiesHud(arena.player1, "#arena-hud-abilities");
-      abilHud.style.display = "flex";
-    } else {
-      abilHud.style.display = "none";
-    }
+  if (app.input) {
+    app.input = null;
   }
-  updateArenaHud(arena, input1);
-  
-  showScreen("arena");
-  requestAnimationFrame(() => {
-    scene.resize();
-    scene.setArena(ARENA);
-    loop.start();
-  });
+  app.session = null;
+  gameState.session = null;
+  document.body.classList.remove("arena-mode");
+  // Restaurar o botão "Sair" do HUD global ao sair da arena
+  const drillExitOverlay = $("#drill-info-overlay-global");
+  if (drillExitOverlay) drillExitOverlay.style.display = "";
+  $("#pause-overlay").classList.remove("visible");
+  $("#global-hud").style.display = "none";
+  renderMenu();
+  showScreen("menu");
 }
 
 function startOnlineLobby(opts) {
-  app.socket.emit('find-match', { champion: $("#arena-p1-champion").value });
+  // Online lobby removed; versus mode runs locally.
+}
+
+function abortArena() {
+  abortVersus();
+}
+
+function finishArena() {
+  if (!app.session) return;
+  if (app.session.input) app.session.input.destroy();
+  const { loop } = app.session;
+  try { loop.stop(); } catch {}
+  if (app.scene) {
+    try { app.scene.reset(); } catch {}
+    app.scene = null;
+  }
+  if (app.input) {
+    app.input = null;
+  }
+  app.session = null;
+  gameState.session = null;
+  gameState.arenaSession = null;
+  $("#global-hud").style.display = "none";
+  renderMenu();
+  showScreen("menu");
+}
+
+function hideArenaResultModal() {
+  // No result modal for versus mode.
 }
 
 function getChampionEmoji(alias) {
@@ -1361,284 +1331,6 @@ function getChampionEmoji(alias) {
     Annie: '🧸', Zed: '🗡️', Syndra: '🔮', Velkoz: '👁️'
   };
   return emojis[alias] || '❓';
-}
-
-function abortArena() {
-  if (!app.arenaSession) return;
-  try { app.arenaSession.loop.stop(); } catch {}
-  if (app.arenaScene) {
-    try { app.arenaScene.reset(); } catch {}
-  }
-  app.arenaSession = null;
-  app.arenaInput2 = null;
-  renderMenu();
-  showScreen("menu");
-}
-
-function finishArena() {
-  if (!app.arenaSession) return;
-  const { arena, loop } = app.arenaSession;
-  try { loop.stop(); } catch {}
-  if (app.arenaScene) {
-    try { app.arenaScene.reset(); } catch {}
-  }
-  app.arenaSession = null;
-  app.arenaInput2 = null;
-  
-  const result = arena.result();
-  let winnerText;
-  if (result.winner === 'p1') winnerText = "Jogador 1 venceu!";
-  else if (result.winner === 'p2') winnerText = "Jogador 2 venceu!";
-  else winnerText = "Empate!";
-  
-  showArenaResultModal({
-    winner: result.winner,
-    p1Score: result.p1Score,
-    p2Score: result.p2Score,
-    p1Champion: result.p1Champion,
-    p2Champion: result.p2Champion,
-    duration: 180 - result.duration,
-    winnerText
-  });
-}
-
-function showArenaResultModal(data) {
-  const modal = $("#arena-result-modal");
-  if (!modal) return;
-  
-  modal.querySelector(".modal-title").textContent = data.winner === 'draw' ? "Empate!" : data.winnerText;
-  modal.querySelector(".modal-score").textContent = data.p1Score + " x " + data.p2Score;
-  modal.querySelector(".modal-champions").innerHTML = 
-    '<span class="p1">' + data.p1Champion + '</span> vs <span class="p2">' + data.p2Champion + '</span>';
-  modal.querySelector(".modal-duration").textContent = "Duração: " + formatTime(data.duration);
-  modal.querySelector(".modal-medal").textContent = data.winner === 'draw' ? "🤝" : (data.winner === 'p1' ? "🏆" : "🥈");
-  
-  const rematchBtn = modal.querySelector(".modal-rematch");
-  const menuBtn = modal.querySelector(".modal-menu");
-  
-  rematchBtn.onclick = () => {
-    hideArenaResultModal();
-    const lastSettings = app.lastArenaSettings || { isBot: true };
-    startArena(lastSettings);
-  };
-  
-  menuBtn.onclick = () => {
-    hideArenaResultModal();
-    renderMenu();
-    showScreen("menu");
-  };
-  
-  modal.classList.add("visible");
-}
-
-function hideArenaResultModal() {
-  const modal = $("#arena-result-modal");
-  if (modal) modal.classList.remove("visible");
-}
-
-function updateArenaHud(arena, input) {
-  const min = Math.floor(arena.timeLeft / 60);
-  const sec = Math.floor(arena.timeLeft % 60).toString().padStart(2, '0');
-  $("#arena-hud-timer").textContent = min + ":" + sec;
-  
-  $("#arena-p1-score").textContent = "P1: " + arena.p1Score;
-  $("#arena-p2-score").textContent = "P2: " + arena.p2Score;
-  
-  if (!arena.player1) return;
-  const hpPct = Math.max(0, Math.min(1, (arena.player1.hp || 0) / (arena.player1.maxHp || 1)));
-  const hpBar = $("#arena-hud-hp");
-  if (hpBar) {
-    hpBar.style.width = (hpPct * 100) + "%";
-    if (hpBar.parentElement) hpBar.parentElement.classList.toggle("low", hpPct < 0.35);
-  }
-  const hpText = $("#arena-hud-hp-text");
-  if (hpText) hpText.textContent = String(Math.round(arena.player1.hp || 0));
-  
-  const chips = [
-    { label: "Ordem", value: arena.player1.controller?.order?.kind || "-" }
-  ];
-  const statsEl = $("#arena-hud-stats");
-  if (statsEl) {
-    statsEl.innerHTML = chips
-      .map(function(c) { return '<span class="stat-chip">' + c.label + '<b>' + c.value + '</b></span>'; })
-      .join("");
-  }
-  
-  if (arena.abilitiesEnabled) {
-    updateAbilitiesCooldowns(arena.player1, "#arena-hud-abilities");
-    updateChampionPortrait(arena.player1, { img: "arena-hud-portrait-img", level: "arena-hud-portrait-level", arc: "arena-hud-portrait-arc", smallIcon: "arena-hud-portrait-small-icon" });
-  }
-  
-  if (!updateArenaHud._attributesInited) {
-    renderAttributesHud(arena.player1, "#arena-hud-attributes");
-    updateArenaHud._attributesInited = true;
-  }
-  updateAttributesHud(arena.player1, "#arena-hud-attributes");
-  
-  updatePowerupHud(arena, "p1", "#arena-hud-powerups");
-}
-
-function updatePowerupHud(arena, playerId, containerSelector) {
-  const container = $(containerSelector);
-  if (!container) return;
-  
-  const powerups = arena.getActivePowerups(playerId);
-  if (!powerups.length) {
-    container.innerHTML = "";
-    return;
-  }
-  
-  container.innerHTML = powerups.map(function(p) {
-    const progress = (p.timer / p.maxTimer) * 360;
-    return '<div class="powerup-hud-item" style="--powerup-color: ' + p.color + '; --progress: ' + progress + 'deg;">' +
-      '<span class="icon">' + p.icon + '</span>' +
-      '<div class="cooldown-ring"></div>' +
-      '<span class="timer-text">' + Math.ceil(p.timer) + 's</span>' +
-    '</div>';
-  }).join("");
-}
-
-function renderAbilitiesHud(player, containerSelector) {
-  const container = $(containerSelector);
-  if (!container || !player.data?.spells) {
-    if (container) container.innerHTML = "";
-    return;
-  }
-  
-  const spells = player.data.spells.filter(function(s) { return s.slot !== 'P'; });
-  const slotsHtml = spells.map(function(spell) {
-    return '<div class="ability-slot" data-slot="' + spell.slot + '">' +
-      '<div class="cooldown-overlay ready" id="cd-' + spell.slot + '"></div>' +
-      '<span class="key-hint">' + spell.slot + '</span>' +
-    '</div>';
-  }).join("");
-
-  const hpMax = player.maxHp || 1;
-  const hpPct = Math.max(0, Math.min(1, (player.hp ?? 0) / hpMax));
-  const resMax = player.resourceMax || player.maxHp * 0.3;
-  const resCur = player.resourceCur ?? resMax * 0.5;
-  const resPct = Math.max(0, Math.min(1, resMax > 0 ? resCur / resMax : 0));
-
-  container.innerHTML = '<div class="ability-row">' + slotsHtml + '</div>' +
-    '<div class="hud-bars">' +
-      '<div class="hud-bar"><div class="hud-bar-fill" style="width:' + (hpPct * 100).toFixed(1) + '%"></div><div class="hud-bar-text">' + Math.round(player.hp ?? 0) + '</div></div>' +
-      '<div class="hud-bar"><div class="hud-bar-fill resource" style="width:' + (resPct * 100).toFixed(1) + '%"></div><div class="hud-bar-text">' + Math.round(resCur) + '</div></div>' +
-    '</div>';
-  
-  spells.forEach(function(spell) {
-    const slot = container.querySelector('[data-slot="' + spell.slot + '"]');
-    if (slot) {
-      slot.style.background = getSpellBackground(spell);
-    }
-  });
-}
-
-function getSpellBackground(spell) {
-  const colors = {
-    'linear': 'linear-gradient(135deg, #4ea1ff, #2b6fbd)',
-    'circle': 'linear-gradient(135deg, #ffb454, #e67e22)',
-    'cone': 'linear-gradient(135deg, #46d39a, #2ecc71)',
-    'self': 'linear-gradient(135deg, #c8aa6e, #b8860b)'
-  };
-  return colors[spell.shape] || 'linear-gradient(135deg, #666, #444)';
-}
-
-function updateAbilitiesCooldowns(player, containerSelector) {
-  if (!player.data?.spells) return;
-  
-  for (const spell of player.data.spells.filter(function(s) { return s.slot !== 'P'; })) {
-    const cd = player.abilityCooldowns[spell.slot] || 0;
-    const overlay = document.getElementById("cd-" + spell.slot);
-    if (overlay) {
-      if (cd > 0) {
-        overlay.textContent = String(Math.ceil(cd));
-        overlay.classList.remove('ready');
-      } else {
-        overlay.classList.add('ready');
-      }
-    }
-  }
-}
-
-function renderAttributesHud(player, containerSelector) {
-  const container = $(containerSelector);
-  if (!container) return;
-  
-  const s = player.data?.stats || {};
-  const mods = player.statModifiers || {};
-  const buffAtkSpd = player.buffAttackSpeed || 1;
-  const buffMovSpd = player.buffMoveSpeed || 1;
-  const pctOf = (key) => Math.round(((mods[key] ?? 1) - 1) * 100);
-
-  const attrs = [
-    { key: 'health', icon: '❤️', label: 'Vida', value: Math.round(s.health || 0) },
-    { key: 'attackDamage', icon: '⚔️', label: 'Dano', value: Math.round(s.attackDamage || 0) },
-    { key: 'attackRange', icon: '🎯', label: 'Alcance', value: Math.round(s.attackRange || 0) },
-    { key: 'attackSpeed', icon: '🏹', label: 'AA/s', value: ((1 / (s.attackPeriod || 0.625)) * buffAtkSpd).toFixed(2) },
-    { key: 'attackCastTime', icon: '⏱️', label: 'Windup', value: Math.round((s.attackCastTime || 0.3) * 1000) + 'ms' },
-    { key: 'movementSpeed', icon: '👟', label: 'Vel. Mov', value: Math.round((s.movementSpeed || 0) * buffMovSpd) },
-    { key: 'projectileSpeed', icon: '🚀', label: 'Vel. Proj', value: Math.round(s.projectileSpeed || 0) },
-    { key: 'armor', icon: '🛡️', label: 'Armadura', value: Math.round(s.armor || 0) },
-    { key: 'magicResistance', icon: '🔮', label: 'Res. Mág', value: Math.round(s.magicResistance || 0) },
-  ];
-
-  container.innerHTML = attrs.map(function(a) {
-    const pct = pctOf(a.key);
-    let tone = 'neutral';
-    if (pct > 0) tone = 'positive';
-    else if (pct < 0) tone = 'negative';
-    return '<div class="attr-item" title="' + a.label + ': ' + a.value + ' (' + (pct >= 0 ? '+' : '') + pct + '%)">' +
-      '<span class="attr-icon">' + a.icon + '</span>' +
-      '<span class="attr-value ' + tone + '">' + a.value + '</span>' +
-      '<span class="attr-pct ' + tone + '">(' + (pct >= 0 ? '+' : '') + pct + '%)</span>' +
-    '</div>';
-  }).join('');
-}
-
-function updateAttributesHud(player, containerSelector) {
-  const container = $(containerSelector);
-  if (!container) return;
-  
-  const items = container.querySelectorAll('.attr-item');
-  if (items.length === 0) return;
-  
-  const s = player.data?.stats || {};
-  const mods = player.statModifiers || {};
-  const buffAtkSpd = player.buffAttackSpeed || 1;
-  const buffMovSpd = player.buffMoveSpeed || 1;
-  const pctOf = (key) => Math.round(((mods[key] ?? 1) - 1) * 100);
-
-  const attrs = [
-    { key: 'health', value: Math.round(s.health || 0) },
-    { key: 'attackDamage', value: Math.round(s.attackDamage || 0) },
-    { key: 'attackRange', value: Math.round(s.attackRange || 0) },
-    { key: 'attackSpeed', value: ((1 / (s.attackPeriod || 0.625)) * buffAtkSpd).toFixed(2) },
-    { key: 'attackCastTime', value: Math.round((s.attackCastTime || 0.3) * 1000) + 'ms' },
-    { key: 'movementSpeed', value: Math.round((s.movementSpeed || 0) * buffMovSpd) },
-    { key: 'projectileSpeed', value: Math.round(s.projectileSpeed || 0) },
-    { key: 'armor', value: Math.round(s.armor || 0) },
-    { key: 'magicResistance', value: Math.round(s.magicResistance || 0) },
-  ];
-
-  const sig = attrs.map((a) => `${a.key}:${a.value}`).join("|");
-  if (updateAttributesHud._lastSig === sig) return;
-  updateAttributesHud._lastSig = sig;
-
-  attrs.forEach(function(a, i) {
-    const item = items[i];
-    if (!item) return;
-    const valueEl = item.querySelector('.attr-value');
-    const pctEl = item.querySelector('.attr-pct');
-    const pct = pctOf(a.key);
-    let tone = 'neutral';
-    if (pct > 0) tone = 'positive';
-    else if (pct < 0) tone = 'negative';
-    if (valueEl) {
-      valueEl.textContent = a.value;
-      valueEl.className = 'attr-value ' + tone;
-    }
-    if (pctEl) pctEl.textContent = '(' + (pct >= 0 ? '+' : '') + pct + '%)';
-  });
 }
 
 boot();
