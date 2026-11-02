@@ -147,11 +147,13 @@ export class Controller {
 /**
  * Which unit (if any) sits under the cursor.
  * `radius` is generous on purpose: in LoL you click the champion model.
+ *
+ * Só unidades que o jogador pode atacar: nunca o próprio jogador
+ * (team "player") nem aliados (team "ally" — ex.: carry no Peel).
  */
 export function unitUnderCursor(world, x, y, radius = 120) {
-  // Only opponents: the player is never a click target.
   if (!world || !world.nearest) return null;
-  return world.nearest(x, y, radius, (u) => u && u.alive && u.team !== "player");
+  return world.nearest(x, y, radius, (u) => u && u.alive && u.team !== "player" && u.team !== "ally");
 }
 
 /** Human readable label for the current order, used by the HUD. */

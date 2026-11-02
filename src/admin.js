@@ -19,6 +19,7 @@ const TABS = [
   { id: "arena", label: "Arena" },
   { id: "drills", label: "Treinos" },
   { id: "modos", label: "Modos" },
+  { id: "config", label: "Configurações" },
   { id: "kitingVersus", label: "Dados REA" },
   { id: "tuning", label: "Balanciamento" },
 ];
@@ -1151,6 +1152,80 @@ export function createAdmin({ app, onApply }) {
     return root;
   }
 
+
+  // ── Configurações Globais ────────────────────────────────────────────
+
+  function configPanel() {
+    const root = document.createDocumentFragment();
+    const combat = config.combat();
+    const camera = config.camera();
+
+    // --- Câmara ---
+    const cam = section(
+      "Câmera",
+      "Configurações de câmera aplicáveis a todos os modos (Arena e Treinos)."
+    );
+    const camGrid = fieldGrid(
+      numeric({
+        label: "Zoom", min: 0.4, max: 2.5, step: 0.05,
+        value: camera.zoom, placeholder: DEFAULTS.camera.zoom,
+        onSet: (v) => config.patch("camera", { zoom: v ?? DEFAULTS.camera.zoom }),
+        hint: "Afasta ou aproxima a visão da câmera.",
+      }),
+      numeric({
+        label: "FOV", unit: "graus", min: 25, max: 70, step: 1,
+        value: camera.fov, placeholder: DEFAULTS.camera.fov,
+        onSet: (v) => config.patch("camera", { fov: v ?? DEFAULTS.camera.fov }),
+        hint: "Campo de visão vertical.",
+      }),
+      numeric({
+        label: "Distância", min: 300, max: 2000, step: 25,
+        value: camera.distance, placeholder: DEFAULTS.camera.distance,
+        onSet: (v) => config.patch("camera", { distance: v ?? DEFAULTS.camera.distance }),
+        hint: "Distância da câmera atrás do jogador.",
+      }),
+      numeric({
+        label: "Inclinação (pitch)", unit: "graus", min: 10, max: 60, step: 1,
+        value: combat.cameraPitch, placeholder: DEFAULTS.combat.cameraPitch,
+        hint: "Menor = mais achatado (estilo LoL), maior = mais top-down.",
+        onSet: (v) => config.patch("combat", { cameraPitch: v ?? DEFAULTS.combat.cameraPitch }),
+      }),
+    );
+    cam.appendChild(camGrid);
+
+    // --- Combate / Controles ---
+    const combate = section(
+      "Combate & Controles",
+      "Configurações de comportamento global (afetam Arena e Treinos)."
+    );
+    const combateGrid = fieldGrid(
+      toggle({
+        label: "Câmera travada no personagem",
+        hint: "Y alterna travada/solta. Solta = mover câmera encostando o mouse nas bordas.",
+        checked: combat.cameraLocked,
+        onSet: (checked) => config.patch("combat", { cameraLocked: checked }),
+      }),
+      toggle({
+        label: "A + clique direito foca no alvo mais próximo",
+        hint: "Com A pressionado, clicar direito em um inimigo ordena ataque direto nele. Desativado = attack-move normal.",
+        checked: combat.attackMoveTargetNearest,
+        onSet: (checked) => config.patch("combat", { attackMoveTargetNearest: checked }),
+      }),
+      toggle({
+        label: "Mostrar anéis de alcance",
+        hint: "Azul: seu alcance. Vermelho: alcance dos inimigos.",
+        checked: combat.showRanges,
+        onSet: (checked) => config.patch("combat", { showRanges: checked }),
+      }),
+    );
+    combate.appendChild(combateGrid);
+
+    root.appendChild(cam);
+    root.appendChild(combate);
+
+    return root;
+  }
+
   // ── Balanciamento (tuning) ────────────────────────────────────────────
 
   function tuningPanel() {
@@ -1558,6 +1633,7 @@ export function createAdmin({ app, onApply }) {
     else if (view.tab === "enemies") bodyEl.appendChild(enemyPanel());
     else if (view.tab === "arena") bodyEl.appendChild(arenaPanel());
     else if (view.tab === "modos") bodyEl.appendChild(modosPanel());
+    else if (view.tab === "config") bodyEl.appendChild(configPanel());
     else if (view.tab === "kitingVersus") bodyEl.appendChild(kitingVersusPanel());
     else if (view.tab === "tuning") bodyEl.appendChild(tuningPanel());
     else bodyEl.appendChild(drillPanel());

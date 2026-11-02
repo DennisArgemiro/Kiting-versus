@@ -64,3 +64,16 @@ export function formatTime(seconds) {
   const s = Math.max(0, Math.ceil(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
+
+/** Clamp em [0,1] — normalizador de métricas de score. */
+export const unit01 = (v) => clamp(v, 0, 1);
+
+/** Posições equidistantes numa elipse (padrões de spawn/esquiva). */
+export function ringPositions(count, cx, cy, rx, ry = rx, offset = 0) {
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const a = offset + (i / count) * Math.PI * 2;
+    out.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry });
+  }
+  return out;
+}

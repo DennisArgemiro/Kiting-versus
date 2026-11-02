@@ -11,7 +11,7 @@ export class Loop {
    * @param {(alpha:number)=>void} render interpolation factor in [0,1)
    * @param {number} step fixed simulation step in seconds
    */
-  constructor(update, render, step = 1 / 120) {
+  constructor(update, render, step = 1 / 60) {
     this.update = update;
     this.render = render;
     this.step = step;
@@ -45,11 +45,15 @@ export class Loop {
 
     this.accumulator += delta;
     let guard = 0;
-    while (this.accumulator >= this.step && guard++ < 240) {
+    // Max 6 steps per frame (100ms at 60Hz) to prevent spiral of death
+    while (this.accumulator >= this.step && guard++ < 6) {
       this.update(this.step);
       this.accumulator -= this.step;
     }
     this.render(this.accumulator / this.step);
+    // stop() may have been called by update/render (e.g. drill finished):
+    // do not schedule another frame, otherwise the loop keeps running as a zombie.
+    if (!this.running) { this.rafId = 0; return; }
     this.rafId = requestAnimationFrame(this.frame);
   }
 }

@@ -1,11 +1,11 @@
 import { World } from "../engine/world.js";
 import { Champion } from "../engine/unit.js";
 import { skillshotFromSpell } from "../engine/skillshot.js";
-import {
-  ARENA, applyInput, castAbility, makePlayer, resolveAttack, ringPositions,
-  tickAbilities, tuneEnemy, unit01,
-} from "./common.js";
-import { clamp } from "../core/math.js";
+import { makePlayer, tuneEnemy } from "../engine/factory.js";
+import { ARENA } from "../engine/battlefield.js";
+import { resolveAttack } from "../engine/combat.js";
+import { clamp, ringPositions, unit01 } from "../core/math.js";
+import { DrillBase, verdictFor } from "./base.js";
 import {
   applyPlayerStats, durationOf, levelsOf, selectedChampions as pickSelectedChampions,
   slotFromAbility, withRealStats,
@@ -21,24 +21,25 @@ import {
  *   dodge rate   how many shots you avoided
  *   reaction     how fast you left the danger zone after the telegraph
  */
-class DodgeDrill {
+const DODGE_VERDICTS = {
+  defeated: "Você tomou dano demais. Saia da área marcada assim que ela aparecer.",
+  bands: [
+    [90, "Excelente. Você lê a skillshot e sai antes de ela viajar."],
+    [75, "Muito bom. Aumente a antecipação — não espere a linha tocar em você."],
+    [55, "Bom. Você se move, mas às vezes tarde demais."],
+    [35, "Está olhando para o projétil. Olhe para a marcação no chão."],
+    [0, "Fique de olho no indicador de perigo: ele aparece antes do disparo."],
+  ],
+};
+
+class DodgeDrill extends DrillBase {
   constructor({ champion, level, params, rng, onMoveMarker }) {
-    this.world = new World(ARENA);
-    this.rng = rng;
-    this.params = params;
-    this.duration = params.duration;
-    this.timeLeft = params.duration;
-    this.finished = false;
-    this.outcome = "completed";
-    // Countdown before the drill starts: the clock does not run yet.
-    this.ready = 2.4;
+    super({ champion, level, params, rng, onMoveMarker, duration: params.duration });
     this.punishMode = params.punish === true;
 
     this.player = makePlayer(champion, ARENA.w / 2, ARENA.h / 2, 1);
     applyPlayerStats(this.player, params.playerStats, params.playerHpScale ?? 1);
-    this.onMoveMarker = onMoveMarker;
     this.world.add(this.player);
-    this.state = { attackTarget: null };
 
     this.metrics = {
       casts: 0,
@@ -48,7 +49,6 @@ class DodgeDrill {
       punishWindows: 0,
       damageTaken: 0,
       orders: 0,
-      casts: 0,
       attacksStarted: 0,
       reactions: [],
       dodgesBySpell: {},
@@ -74,6 +74,8 @@ class DodgeDrill {
       this.countResolution(shot, outcome === "hit");
     };
   }
+
+  // ── cenário (único deste treino) ────────────────────────────────────────
 
   spawnCasters(params) {
     const count = params.casters.length;
@@ -130,149 +132,6 @@ class DodgeDrill {
     return longest;
   }
 
-  update(dt, input) {
-    input.dt = dt;
-    const world = this.world;
-    const player = this.player;
-
-    if (this.ready > 0) {
-      this.ready = Math.max(0, this.ready - dt);
-      world.update(dt);
-      return;
-    }
-
-    if (!this.finished) {
-      this.timeLeft = Math.max(0, this.timeLeft - dt);
-      if (this.timeLeft <= 0) {
-        this.finished = true;
-        this.outcome = "completed";
-      }
-    }
-
-    // ---- player: League style orders ---------------------------------
-    const orders = applyInput(player, input, world, this.onMoveMarker);
-    if (orders.ordered) this.metrics.orders += 1;
-
-    for (const slot of ["Q", "W", "E", "R"]) {
-      if (input.hit(`Key${slot}`)) {
-        const spell = castAbility(player, slot, input.mouse.x, input.mouse.y, world);
-        if (spell) this.metrics.casts += 1;
-      }
-    }
-    tickAbilities(player, dt);
-
-    const action = player.controller.update(dt, world);
-    if (action.attacked) this.metrics.attacksStarted += 1;
-
-    // Deactivate attack-move after an attack-move attack completes
-    if (input.attackMoveActive && action.attacked && player.controller.order.kind === "attackMove") {
-      input.deactivateAttackMove();
-    }
-
-    const resolved = player.tickTimers(dt);
-    if (resolved) resolveAttack(player, world, resolved, null);
-
-    // ---- casters ------------------------------------------------------
-    for (const enemy of this.casters) {
-      if (!enemy.alive) continue;
-      enemy.faceTowards(player.x, player.y);
-
-      const d = Math.hypot(player.x - enemy.x, player.y - enemy.y);
-      const desired = enemy.preferredRange ?? 900;
-      if (d > desired + 80) {
-        enemy.moveToward(player.x, player.y, dt, 0.6);
-      } else if (d < desired - 320) {
-        enemy.moveDirection(-(player.x - enemy.x), -(player.y - enemy.y), dt, 0.6);
-      }
-
-      enemy.casterTimer -= dt;
-      if (enemy.casterTimer <= 0) {
-        const spell = this.pickSpell(enemy, d);
-        const reach = spell ? (spell.length ?? spell.range ?? 900) : 0;
-        if (spell && d <= reach) {
-          // Only fire from inside the real reach of the spell.
-          const shot = skillshotFromSpell(
-            spell, enemy, player.x, player.y, "enemy", enemy.attackDamage * 1.5,
-            this.params.speedScale ?? 1,
-          );
-          shot.startTime = world.time;
-          shot.reactionStart = null;
-          world.addSkillshot(shot);
-          this.metrics.casts += 1;
-          enemy.casterTimer = (enemy.baseCooldown ?? this.params.cooldown) + this.rng.range(-0.25, 0.4);
-          enemy.preferredRange = reach * 0.95;
-        } else {
-          // Out of range: walk into it and try again shortly.
-          enemy.casterTimer = 0.35;
-          enemy.preferredRange = reach * 0.9;
-          enemy.moveToward(player.x, player.y, dt, 0.75);
-        }
-      }
-      const enemyResolved = enemy.tickTimers(dt);
-      if (enemyResolved) resolveAttack(enemy, world, enemyResolved, null);
-    }
-
-    // ---- reaction tracking -------------------------------------------
-    for (const shot of world.skillshots) {
-      if (shot.team !== "enemy") continue;
-      if (shot.reactionStart === null && shot.phase === "telegraph") {
-        if (shot.threatensPoint(player.x, player.y, player.hitRadius)) {
-          shot.reactionStart = world.time;
-        }
-      } else if (shot.reactionStart !== null) {
-        if (!shot.threatensPoint(player.x, player.y, player.hitRadius)) {
-          this.metrics.reactions.push(world.time - shot.reactionStart);
-          shot.reactionStart = null;
-          shot.escaped = true;
-        }
-      }
-    }
-
-    // ---- punish window (Dodge & Punish) -------------------------------
-    if (this.punishMode) {
-      if (this.punishWindow) {
-        const w = this.punishWindow;
-        if (w.damaged) {
-          this.metrics.punishes += 1;
-          world.effect("ring", w.enemy.x, w.enemy.y, {
-            color: "#46d39a", radius: 40, grow: 260, duration: 0.5,
-          });
-          this.punishWindow = null;
-        } else if (world.time > w.deadline) {
-          this.punishWindow = null;
-        }
-      }
-    }
-
-    // ---- caster respawns ----------------------------------------------
-    for (const enemy of this.casters) {
-      if (enemy.alive) continue;
-      if (enemy.respawnAt === undefined) {
-        enemy.respawnAt = world.time + 4;
-        world.effect("ring", enemy.x, enemy.y, {
-          color: "#ff6b78", radius: 50, grow: 300, duration: 0.6,
-        });
-      } else if (world.time >= enemy.respawnAt) {
-        enemy.respawnAt = undefined;
-        enemy.hp = enemy.maxHp;
-        enemy.alive = true;
-        enemy.casterTimer = 1.2;
-        world.effect("ring", enemy.x, enemy.y, {
-          color: "#ff6b78", radius: 40, grow: 260, duration: 0.5,
-        });
-      }
-    }
-
-    world.update(dt);
-    world.separate();
-    world.clampUnits();
-
-    if (!player.alive && !this.finished) {
-      this.finished = true;
-      this.outcome = "defeated";
-    }
-  }
-
   /** Count resolved skillshots: a hit or a dodge. */
   countResolution(shot, wasHit) {
     if (wasHit) {
@@ -289,18 +148,133 @@ class DodgeDrill {
     }
   }
 
-  render(scene, opts) {
-    scene.render(this.world, {
-      player: this.player,
-      showRanges: opts.showRanges !== false,
-      attackMoveActive: opts.attackMoveActive,
-      input: opts.input,
-      focusTarget: this.focusTarget ? this.focusTarget() : null,
-      punishTarget: this.punishWindow ? this.punishWindow.enemy : null,
-      dt: opts.dt,
-    });
+  // ── frame: base invoca módulos, treino só adiciona o cenário ───────────
+
+  update(dt, input) {
+    input.dt = dt;
+
+    if (this.ready > 0) {
+      this.tickReady(dt);
+      return;
+    }
+
+    this.tickClock(dt);
+
+    // ---- player: mesmo caminho de input de TODOS os modos ---------------
+    this.takeOrders(input);
+    // Esquiva não decai cooldowns (o treino não trata habilidades como recurso).
+    this.castAbilities(input, { tickCooldowns: false });
+    this.controlPass(dt, input, { trackResolves: false });
+
+    // ---- casters ------------------------------------------------------
+    for (const enemy of this.casters) {
+      if (!enemy.alive) continue;
+      enemy.faceTowards(this.player.x, this.player.y);
+
+      const d = Math.hypot(this.player.x - enemy.x, this.player.y - enemy.y);
+      const desired = enemy.preferredRange ?? 900;
+      if (d > desired + 80) {
+        enemy.moveToward(this.player.x, this.player.y, dt, 0.6);
+      } else if (d < desired - 320) {
+        enemy.moveDirection(-(this.player.x - enemy.x), -(this.player.y - enemy.y), dt, 0.6);
+      }
+
+      enemy.casterTimer -= dt;
+      if (enemy.casterTimer <= 0) {
+        const spell = this.pickSpell(enemy, d);
+        const reach = spell ? (spell.length ?? spell.range ?? 900) : 0;
+        if (spell && d <= reach) {
+          // Only fire from inside the real reach of the spell.
+          const shot = skillshotFromSpell(
+            spell, enemy, this.player.x, this.player.y, "enemy", enemy.attackDamage * 1.5,
+            this.params.speedScale ?? 1,
+          );
+          shot.startTime = this.world.time;
+          shot.reactionStart = null;
+          this.world.addSkillshot(shot);
+          this.metrics.casts += 1;
+          enemy.casterTimer = (enemy.baseCooldown ?? this.params.cooldown) + this.rng.range(-0.25, 0.4);
+          enemy.preferredRange = reach * 0.95;
+        } else {
+          // Out of range: walk into it and try again shortly.
+          enemy.casterTimer = 0.35;
+          enemy.preferredRange = reach * 0.9;
+          enemy.moveToward(this.player.x, this.player.y, dt, 0.75);
+        }
+      }
+      const enemyResolved = enemy.tickTimers(dt);
+      if (enemyResolved) resolveAttack(enemy, this.world, enemyResolved, null);
+    }
+
+    // ---- reaction tracking -------------------------------------------
+    for (const shot of this.world.skillshots) {
+      if (shot.team !== "enemy") continue;
+      if (shot.reactionStart === null && shot.phase === "telegraph") {
+        if (shot.threatensPoint(this.player.x, this.player.y, this.player.hitRadius)) {
+          shot.reactionStart = this.world.time;
+        }
+      } else if (shot.reactionStart !== null) {
+        if (!shot.threatensPoint(this.player.x, this.player.y, this.player.hitRadius)) {
+          this.metrics.reactions.push(this.world.time - shot.reactionStart);
+          shot.reactionStart = null;
+          shot.escaped = true;
+        }
+      }
+    }
+
+    // ---- punish window (Dodge & Punish) -------------------------------
+    if (this.punishMode) {
+      if (this.punishWindow) {
+        const w = this.punishWindow;
+        if (w.damaged) {
+          this.metrics.punishes += 1;
+          this.world.effect("ring", w.enemy.x, w.enemy.y, {
+            color: "#46d39a", radius: 40, grow: 260, duration: 0.5,
+          });
+          this.punishWindow = null;
+        } else if (this.world.time > w.deadline) {
+          this.punishWindow = null;
+        }
+      }
+    }
+
+    // ---- caster respawns ----------------------------------------------
+    for (const enemy of this.casters) {
+      if (enemy.alive) continue;
+      if (enemy.respawnAt === undefined) {
+        enemy.respawnAt = this.world.time + 4;
+        this.world.effect("ring", enemy.x, enemy.y, {
+          color: "#ff6b78", radius: 50, grow: 300, duration: 0.6,
+        });
+      } else if (this.world.time >= enemy.respawnAt) {
+        enemy.respawnAt = undefined;
+        enemy.hp = enemy.maxHp;
+        enemy.alive = true;
+        enemy.casterTimer = 1.2;
+        this.world.effect("ring", enemy.x, enemy.y, {
+          color: "#ff6b78", radius: 40, grow: 260, duration: 0.5,
+        });
+      }
+    }
+
+    this.simStep(dt);
+    this.checkDefeat();
   }
 
+  // ── decisão própria do treino ──────────────────────────────────────────
+
+  focusTarget() {
+    const ordered = this.player.controller.target;
+    if (ordered && ordered.alive) return ordered;
+    return this.casters.find((c) => c.alive) || null;
+  }
+
+  render(scene, opts = {}) {
+    super.render(scene, {
+      ...opts,
+      punishTarget: this.punishWindow ? this.punishWindow.enemy : null,
+    });
+  }
 
   /** Live coaching for the dodge drill. */
   coach() {
@@ -312,12 +286,6 @@ class DodgeDrill {
       }
     }
     return "Fique pronto: a marcação aparece antes do projétil";
-  }
-
-  focusTarget() {
-    const ordered = this.player.controller.target;
-    if (ordered && ordered.alive) return ordered;
-    return this.casters.find((c) => c.alive) || null;
   }
 
   hud() {
@@ -382,7 +350,7 @@ class DodgeDrill {
     return {
       score,
       breakdown,
-      verdict: verdictFor(score, this.outcome),
+      verdict: verdictFor(score, this.outcome, DODGE_VERDICTS),
       stats: {
         casts: m.casts,
         dodges: m.dodges,
@@ -393,16 +361,6 @@ class DodgeDrill {
       },
     };
   }
-}
-
-
-function verdictFor(score, outcome) {
-  if (outcome === "defeated") return "Você tomou dano demais. Saia da área marcada assim que ela aparecer.";
-  if (score >= 90) return "Excelente. Você lê a skillshot e sai antes de ela viajar.";
-  if (score >= 75) return "Muito bom. Aumente a antecipação — não espere a linha tocar em você.";
-  if (score >= 55) return "Bom. Você se move, mas às vezes tarde demais.";
-  if (score >= 35) return "Está olhando para o projétil. Olhe para a marcação no chão.";
-  return "Fique de olho no indicador de perigo: ele aparece antes do disparo.";
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -521,7 +479,7 @@ export function buildDodgeDrills(champions, snapshot = null) {
       levels: realSkillLevels.length ? realSkillLevels : levels,
       create: (ctx) => new DodgeDrill({ ...ctx, params: ctx.level.params }),
     },
-    /* 
+    /*
     Desabilitado temporariamente
     {
       id: "dodge-punish",

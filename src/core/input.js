@@ -26,7 +26,7 @@ export class Input {
   }
 
   _bind() {
-    const onKeyDown = (e) => {
+    const onKeyDown = this._onKeyDown = (e) => {
       if (!this.enabled) return;
       const code = e.code;
       if (!this.keys.has(code)) this.pressed.add(code);
@@ -43,10 +43,10 @@ export class Input {
         e.preventDefault();
       }
     };
-    const onKeyUp = (e) => {
+    const onKeyUp = this._onKeyUp = (e) => {
       this.keys.delete(e.code);
     };
-    const onBlur = () => {
+    const onBlur = this._onBlur = () => {
       this.keys.clear();
       this.pressed.clear();
     };
@@ -58,14 +58,14 @@ export class Input {
     // Raw client coordinates: the projection layer owns the canvas offset.
     const toWorld = (e) => this.world.toWorld(e.clientX, e.clientY);
 
-    this.canvas.addEventListener("mousemove", (e) => {
+    this.canvas.addEventListener("mousemove", this._onMouseMove = (e) => {
       const p = toWorld(e);
       this.mouse.x = p.x;
       this.mouse.y = p.y;
       this._lastClient = { x: e.clientX, y: e.clientY };
     });
 
-    this.canvas.addEventListener("mousedown", (e) => {
+    this.canvas.addEventListener("mousedown", this._onMouseDown = (e) => {
       if (!this.enabled) return;
       const p = toWorld(e);
       this.mouse.x = p.x;
@@ -77,10 +77,10 @@ export class Input {
       e.preventDefault();
     });
 
-    this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+    this.canvas.addEventListener("contextmenu", this._onContextMenu = (e) => e.preventDefault());
 
     // Mouse wheel zoom (like League of Legends)
-    this.canvas.addEventListener("wheel", (e) => {
+    this.canvas.addEventListener("wheel", this._onWheel = (e) => {
       if (!this.enabled) return;
       e.preventDefault();
       // Emit zoom event for the scene to handle
@@ -90,6 +90,24 @@ export class Input {
       if (this._zoomDelta > 1.5) this._zoomDelta = 1.5;
       if (this._zoomDelta < -0.5) this._zoomDelta = -0.5;
     }, { passive: false });
+  }
+
+  /** Detaches every listener; called when a session ends. */
+  destroy() {
+    this.enabled = false;
+    const rm = (target, type, fn, extra) => {
+      try { target.removeEventListener(type, fn, extra); } catch {}
+    };
+    rm(window, "keydown", this._onKeyDown);
+    rm(window, "keyup", this._onKeyUp);
+    rm(window, "blur", this._onBlur);
+    rm(this.canvas, "mousemove", this._onMouseMove);
+    rm(this.canvas, "mousedown", this._onMouseDown);
+    rm(this.canvas, "contextmenu", this._onContextMenu);
+    rm(this.canvas, "wheel", this._onWheel, { passive: false });
+    this.keys.clear();
+    this.pressed.clear();
+    this.clicks.length = 0;
   }
 
   /** Clears any pending state between drills. */
@@ -111,6 +129,11 @@ export class Input {
   /** Attack-move mode: true while A is held down. */
   get attackMoveActive() {
     return this.keys.has("KeyA");
+  }
+
+  /** Reset the attack-move consumed flag. */
+  deactivateAttackMove() {
+    this.consumedAttackMove = false;
   }
 
   /** Camera locked to player (Y toggles). */
@@ -171,5 +194,6 @@ export class Input {
   endFrame() {
     this.pressed.clear();
     this.clicks.length = 0;
+    this.consumedAttackMove = false;
   }
 }
